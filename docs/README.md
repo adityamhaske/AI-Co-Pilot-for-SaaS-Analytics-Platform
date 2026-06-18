@@ -71,7 +71,8 @@ cd frontend && npm test
 | `SECURITY.md` | JWT design, RBAC matrix, prompt-injection defenses, query validation rules |
 | `CONTRIBUTING.md` | Local dev workflow, coding standards, commit conventions |
 | `DEPLOYMENT.md` | Free-tier deployment steps for frontend, backend, and database |
+| `PROMPT_FOR_ANTIGRAVITY.md` | The build brief used to generate this codebase — keep it updated if scope changes |
 
 ## License
 
-MIT
+MIT (adjust if you'd prefer something else).
