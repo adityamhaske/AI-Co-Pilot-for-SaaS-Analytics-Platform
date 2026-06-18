@@ -1,24 +1,32 @@
-# Node modules
-frontend/node_modules/
-frontend/.next/
-frontend/dist/
-frontend/build/
-# Python caches
-backend/__pycache__/
-**/__pycache__/
-*.pyc
-# Environment files
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
 .env
-.env.*
-# SQLite database
-*.sqlite3
-# Logs
-logs/
+.venv
+env/
+venv/
+ENV/
+
+# Unit test / coverage reports
+.pytest_cache/
+.coverage
+htmlcov/
+
+# SQLite databases
+*.db
+*.db-journal
+
+# Node
+node_modules/
+dist/
+.eslintcache
+.npm
+
 # OS files
 .DS_Store
-# IDE settings
-.vscode/
-.idea/
-# Build artifacts
-coverage/
-*.log
+.DS_Store?
+._*
+Thumbs.db
