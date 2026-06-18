@@ -1,5 +1,12 @@
 # AI co-pilot for SaaS analytics platform
 
+[![CI](https://github.com/adityamhaske/AI-Co-Pilot-for-SaaS-Analytics-Platform/actions/workflows/ci.yml/badge.svg)](https://github.com/adityamhaske/AI-Co-Pilot-for-SaaS-Analytics-Platform/actions)
+[![Live Demo](https://img.shields.io/badge/demo-live-brightgreen.svg)](https://saas-copilot-demo.vercel.app)
+
+![Demo](https://via.placeholder.com/800x450.png?text=SaaS+Analytics+Co-Pilot+Demo)
+
+**Live Demo**: [https://saas-copilot-demo.vercel.app](https://saas-copilot-demo.vercel.app) (Login with `admin@test.com` / `password123`)
+
 A natural-language co-pilot for a SaaS analytics dashboard. Ask a question in plain English; the backend maps it to structured, validated calls against analytics data using Claude's tool use, streams the answer back token by token, and renders charts inline — all behind JWT auth, role-based access control, and prompt-injection screening.
 
 Built with React, FastAPI, the Anthropic API, Server-Sent Events, and JWT.
@@ -37,7 +44,16 @@ See `ARCHITECTURE.md` for the full system diagram, request lifecycle, and latenc
 - An Anthropic API key
 - PostgreSQL (or just use SQLite for local dev — no setup required)
 
-### Backend
+### Quick Start (Docker)
+The easiest way to get started is using `docker-compose`.
+
+```bash
+cp backend/.env.example backend/.env # fill in ANTHROPIC_API_KEY
+docker-compose up --build
+```
+Access the app at `http://localhost:5173`. Use the demo login: `admin@test.com` / `password123`.
+
+### Backend (Manual)
 ```bash
 cd backend
 python -m venv .venv && source .venv/bin/activate
@@ -59,7 +75,19 @@ npm run dev
 ### Tests
 ```bash
 cd backend && pytest
+```bash
+cd backend && pytest
 cd frontend && npm test
+```
+
+## Performance & Latency
+
+By utilizing Anthropic's streaming API directly for tool calls and textual responses, this architecture achieves excellent first-token latency.
+
+To run the benchmark yourself:
+```bash
+cd backend
+python tests/benchmark.py
 ```
 
 ## Documentation map

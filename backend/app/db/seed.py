@@ -101,6 +101,11 @@ def seed_db():
     db.commit()
     db.close()
     print("Database seeded successfully.")
+    print("-" * 30)
+    print("Demo Login credentials:")
+    print("Email: admin@test.com")
+    print("Password: password123")
+    print("-" * 30)
 
 if __name__ == "__main__":
     seed_db()

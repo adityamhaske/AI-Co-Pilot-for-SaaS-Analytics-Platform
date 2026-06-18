@@ -9,43 +9,14 @@ async def stream_orchestrator(db: Session, tenant_id: str, role: str, user_messa
     messages = [{"role": "user", "content": user_message}]
     allowed_tools = [t for t in TOOLS if check_tool_access(role, t["name"])]
     
-    # First call - non-streaming to handle tool use
-    response = await client.messages.create(
-        model="claude-3-5-sonnet-20241022",
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=messages,
-        tools=allowed_tools,
-    )
+    # We loop to allow multiple sequential tool calls in a single turn.
+    while True:
+        # Buffer to accumulate tool_use arguments
+        current_tool_id = None
+        current_tool_name = None
+        current_tool_input = ""
+        is_tool_use = False
 
-    if response.stop_reason == "tool_use":
-        tool_use = next((b for b in response.content if b.type == "tool_use"), None)
-        
-        if not tool_use or not check_tool_access(role, tool_use.name):
-            tool_result_content = "Error: Unauthorized or missing tool use."
-        else:
-            try:
-                tool_result = execute_tool(db, tenant_id, tool_use.name, tool_use.input)
-                tool_result_content = json.dumps(tool_result)
-            except Exception as e:
-                tool_result_content = f"Error executing tool: {str(e)}"
-        
-        messages.append({
-            "role": "assistant",
-            "content": response.content,
-        })
-        messages.append({
-            "role": "user",
-            "content": [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": tool_use.id,
-                    "content": tool_result_content,
-                }
-            ],
-        })
-        
-        # Second call - stream the final answer
         async with client.messages.stream(
             model="claude-3-5-sonnet-20241022",
             max_tokens=1024,
@@ -53,13 +24,56 @@ async def stream_orchestrator(db: Session, tenant_id: str, role: str, user_messa
             messages=messages,
             tools=allowed_tools,
         ) as stream:
-            async for text in stream.text_stream:
-                yield f"data: {json.dumps({'content': text})}\n\n"
-        
-        yield "data: [DONE]\n\n"
-    else:
-        # If no tool use, just yield the text content
-        for block in response.content:
-            if block.type == 'text':
-                yield f"data: {json.dumps({'content': block.text})}\n\n"
-        yield "data: [DONE]\n\n"
+            async for event in stream:
+                if event.type == "text":
+                    # Send text to user immediately
+                    yield f"data: {json.dumps({'content': event.text})}\n\n"
+                elif event.type == "content_block_start" and event.content_block.type == "tool_use":
+                    is_tool_use = True
+                    current_tool_id = event.content_block.id
+                    current_tool_name = event.content_block.name
+                    current_tool_input = ""
+                elif event.type == "content_block_delta" and event.delta.type == "input_json_delta":
+                    current_tool_input += event.delta.partial_json
+                elif event.type == "message_stop":
+                    # Stream finished, check stop reason inside the block or wait after
+                    pass
+            
+            # After stream completes, we can get the final message object to append to history
+            final_message = await stream.get_final_message()
+            messages.append({"role": "assistant", "content": final_message.content})
+
+            if final_message.stop_reason == "tool_use":
+                # Ensure we have parsed the input
+                tool_input_dict = json.loads(current_tool_input) if current_tool_input else {}
+                
+                if not check_tool_access(role, current_tool_name):
+                    tool_result_content = "Error: Unauthorized or missing tool use."
+                else:
+                    try:
+                        tool_result = execute_tool(db, tenant_id, current_tool_name, tool_input_dict)
+                        tool_result_content = json.dumps(tool_result)
+                        
+                        # Check if it should be charted
+                        if isinstance(tool_result, list) or isinstance(tool_result, dict):
+                            yield f"data: {json.dumps({'chart_data': tool_result, 'tool_name': current_tool_name})}\n\n"
+                            
+                    except Exception as e:
+                        tool_result_content = f"Error executing tool: {str(e)}"
+                
+                messages.append({
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": current_tool_id,
+                            "content": tool_result_content,
+                        }
+                    ],
+                })
+                # Continue loop to send tool_result back to Claude
+            else:
+                # Stop reason was not tool_use, we are done
+                break
+                
+    yield "data: [DONE]\n\n"
