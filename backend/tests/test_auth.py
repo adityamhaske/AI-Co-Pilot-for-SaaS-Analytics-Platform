@@ -1,6 +1,5 @@
 from datetime import timedelta
 from app.core.security import create_access_token
-import time
 
 def test_login_success(client, test_user):
     response = client.post("/api/auth/login", json={"email": "test@test.com", "password": "password123"})

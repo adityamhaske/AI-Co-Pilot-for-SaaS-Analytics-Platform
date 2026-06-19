@@ -1,4 +1,3 @@
-import pytest
 from fastapi import FastAPI, Depends
 from fastapi.testclient import TestClient
 from app.core.rbac import RoleChecker, check_tool_access

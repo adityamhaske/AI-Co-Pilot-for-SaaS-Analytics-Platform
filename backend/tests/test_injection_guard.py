@@ -1,4 +1,3 @@
-import pytest
 from app.guard.injection_guard import check_prompt_injection
 
 def test_safe_queries():

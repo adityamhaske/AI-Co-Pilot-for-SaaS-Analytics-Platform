@@ -1,6 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-from app.db.models import Subscription, Invoice, Customer, UsageEvent
+from app.db.models import Customer
 
 def get_metric_trend_handler(db: Session, tenant_id: str, kwargs: dict) -> list:
     # Dummy implementation for tool

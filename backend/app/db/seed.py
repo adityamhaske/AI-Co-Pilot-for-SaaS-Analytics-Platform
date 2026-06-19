@@ -1,5 +1,5 @@
 import random
-from datetime import datetime, timedelta
+from datetime import timedelta
 from faker import Faker
 from app.db.session import SessionLocal, engine
 from app.db.models import Base, Tenant, User, Customer, Subscription, Invoice, UsageEvent

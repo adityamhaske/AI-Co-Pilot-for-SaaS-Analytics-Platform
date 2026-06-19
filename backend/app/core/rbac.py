@@ -1,5 +1,5 @@
 from fastapi import Depends, HTTPException, status, Request
-from typing import Callable, List
+from typing import List
 from app.core.security import verify_token
 
 # RBAC Matrix

@@ -15,8 +15,6 @@ async def stream_orchestrator(db: Session, tenant_id: str, role: str, user_messa
         current_tool_id = None
         current_tool_name = None
         current_tool_input = ""
-        is_tool_use = False
-
         async with client.messages.stream(
             model="claude-3-5-sonnet-20241022",
             max_tokens=1024,
@@ -29,7 +27,6 @@ async def stream_orchestrator(db: Session, tenant_id: str, role: str, user_messa
                     # Send text to user immediately
                     yield f"data: {json.dumps({'content': event.text})}\n\n"
                 elif event.type == "content_block_start" and event.content_block.type == "tool_use":
-                    is_tool_use = True
                     current_tool_id = event.content_block.id
                     current_tool_name = event.content_block.name
                     current_tool_input = ""
