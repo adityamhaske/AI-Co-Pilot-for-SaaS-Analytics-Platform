@@ -8,14 +8,14 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, L
 interface Message {
   role: "user" | "assistant";
   content: string;
-  chartData?: any;
+  chartData?: Record<string, unknown> | Array<Record<string, unknown>>;
   toolName?: string;
 }
 
-const ChartComponent = ({ data, toolName }: { data: any, toolName: string }) => {
+const ChartComponent = ({ data, toolName }: { data: Record<string, unknown> | Array<Record<string, unknown>>, toolName: string }) => {
   if (!data) return null;
 
-  if (toolName === "compare_segments" && typeof data === "dict" || !Array.isArray(data)) {
+  if (toolName === "compare_segments" && typeof data === "object" || !Array.isArray(data)) {
     // Convert dict to array for BarChart
     const arrData = Object.entries(data).map(([key, value]) => ({ name: key, value }));
     return (
@@ -142,7 +142,7 @@ export function Chat({ token, onLogout }: { token: string; onLogout: () => void 
                       return newMessages;
                     });
                   }
-                } catch (err) {
+                } catch {
                   // Ignore parse errors from partial chunks if any
                 }
               }

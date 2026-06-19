@@ -8,9 +8,24 @@ from app.main import app
 async def test_sse_endpoint_success(client, db_session):
     token = create_access_token("user_test", "tenant_test", "viewer")
     
-    with patch("app.streaming.sse.client.messages.create", new_callable=AsyncMock) as mock_create:
-        mock_create.return_value.stop_reason = "end_turn"
-        mock_create.return_value.content = [AsyncMock(type="text", text="The MRR is increasing.")]
+    with patch("app.streaming.sse.client.messages.stream") as mock_stream:
+        # Mock the async context manager and the stream iterator
+        mock_stream_context = AsyncMock()
+        mock_stream.return_value = mock_stream_context
+        
+        # We need to mock the event iterator and the get_final_message method
+        async def mock_events():
+            # Yield a text event
+            event = type('Event', (), {'type': 'text', 'text': 'The MRR is increasing.'})
+            yield event
+        
+        mock_stream_context.__aenter__.return_value.text_stream = []
+        mock_stream_context.__aenter__.return_value.__aiter__.side_effect = lambda: mock_events()
+        
+        mock_final_message = AsyncMock()
+        mock_final_message.stop_reason = "end_turn"
+        mock_final_message.content = "The MRR is increasing."
+        mock_stream_context.__aenter__.return_value.get_final_message.return_value = mock_final_message
         
         response = client.post(
             "/api/copilot/query",

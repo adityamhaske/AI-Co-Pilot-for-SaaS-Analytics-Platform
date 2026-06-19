@@ -28,8 +28,8 @@ export function Login({ onLogin }: { onLogin: (token: string) => void }) {
 
       const data = await response.json();
       onLogin(data.access_token);
-    } catch (err: any) {
-      setError(err.message || "Failed to login");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to login");
     } finally {
       setLoading(false);
     }
