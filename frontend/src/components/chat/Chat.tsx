@@ -15,7 +15,7 @@ interface Message {
 const ChartComponent = ({ data, toolName }: { data: Record<string, unknown> | Array<Record<string, unknown>>, toolName: string }) => {
   if (!data) return null;
 
-  if (toolName === "compare_segments" && typeof data === "object" || !Array.isArray(data)) {
+  if (toolName === "compare_segments" && typeof data === "object" && !Array.isArray(data)) {
     // Convert dict to array for BarChart
     const arrData = Object.entries(data).map(([key, value]) => ({ name: key, value }));
     return (
@@ -130,7 +130,10 @@ export function Chat({ token, onLogout }: { token: string; onLogout: () => void 
                     setMessages(prev => {
                       const newMessages = [...prev];
                       const lastMessage = newMessages[newMessages.length - 1];
-                      lastMessage.content += parsed.content;
+                      // If a _Calling tool..._ indicator is present, replace it instead of appending
+                      lastMessage.content = lastMessage.content.startsWith('_Calling')
+                        ? parsed.content
+                        : lastMessage.content + parsed.content;
                       return newMessages;
                     });
                   } else if (parsed.chart_data) {
@@ -139,6 +142,13 @@ export function Chat({ token, onLogout }: { token: string; onLogout: () => void 
                       const lastMessage = newMessages[newMessages.length - 1];
                       lastMessage.chartData = parsed.chart_data;
                       lastMessage.toolName = parsed.tool_name;
+                      return newMessages;
+                    });
+                  } else if (parsed.tool_call) {
+                    setMessages(prev => {
+                      const newMessages = [...prev];
+                      const lastMessage = newMessages[newMessages.length - 1];
+                      lastMessage.content = `_Calling ${parsed.tool_call}..._`;
                       return newMessages;
                     });
                   }
