@@ -30,3 +30,6 @@ dist/
 .DS_Store?
 ._*
 Thumbs.db
+
+# Benchmark results (machine-specific, not meaningful to commit)
+benchmark_results.json
