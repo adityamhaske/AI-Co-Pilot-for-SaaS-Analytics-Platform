@@ -1,11 +1,6 @@
 # AI co-pilot for SaaS analytics platform
 
 [![CI](https://github.com/adityamhaske/AI-Co-Pilot-for-SaaS-Analytics-Platform/actions/workflows/ci.yml/badge.svg)](https://github.com/adityamhaske/AI-Co-Pilot-for-SaaS-Analytics-Platform/actions)
-[![Live Demo](https://img.shields.io/badge/demo-live-brightgreen.svg)](https://saas-copilot-demo.vercel.app)
-
-![Demo](https://via.placeholder.com/800x450.png?text=SaaS+Analytics+Co-Pilot+Demo)
-
-**Live Demo**: [https://saas-copilot-demo.vercel.app](https://saas-copilot-demo.vercel.app) (Login with `admin@test.com` / `password123`)
 
 A natural-language co-pilot for a SaaS analytics dashboard. Ask a question in plain English; the backend maps it to structured, validated calls against analytics data using Claude's tool use, streams the answer back token by token, and renders charts inline — all behind JWT auth, role-based access control, and prompt-injection screening.
 
