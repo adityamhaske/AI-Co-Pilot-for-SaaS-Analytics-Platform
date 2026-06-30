@@ -75,9 +75,6 @@ npm run dev
 ### Tests
 ```bash
 cd backend && pytest
-```bash
-cd backend && pytest
-cd frontend && npm test
 ```
 
 ## Performance & Latency

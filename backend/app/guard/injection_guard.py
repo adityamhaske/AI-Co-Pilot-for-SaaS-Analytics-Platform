@@ -11,6 +11,7 @@ INJECTION_PATTERNS = [
     re.compile(r"print\s+your\s+instructions", re.IGNORECASE),
 ]
 
+
 def check_prompt_injection(user_input: str, user_id: str, tenant_id: str) -> bool:
     """
     Checks user input against heuristic patterns for prompt injection.
@@ -23,8 +24,8 @@ def check_prompt_injection(user_input: str, user_id: str, tenant_id: str) -> boo
                 user_id=user_id,
                 tenant_id=tenant_id,
                 input_snippet=user_input[:100],
-                pattern=pattern.pattern
+                pattern=pattern.pattern,
             )
             return False
-            
+
     return True

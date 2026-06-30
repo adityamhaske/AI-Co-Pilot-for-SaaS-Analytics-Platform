@@ -5,13 +5,16 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "metric": {"type": "string", "enum": ["mrr", "arr", "active_users", "new_signups"]},
+                "metric": {
+                    "type": "string",
+                    "enum": ["mrr", "arr", "active_users", "new_signups"],
+                },
                 "start_date": {"type": "string", "format": "date"},
                 "end_date": {"type": "string", "format": "date"},
-                "granularity": {"type": "string", "enum": ["day", "week", "month"]}
+                "granularity": {"type": "string", "enum": ["day", "week", "month"]},
             },
-            "required": ["metric", "start_date", "end_date", "granularity"]
-        }
+            "required": ["metric", "start_date", "end_date", "granularity"],
+        },
     },
     {
         "name": "get_churn_rate",
@@ -19,10 +22,13 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "period": {"type": "string", "enum": ["last_month", "last_quarter", "last_year"]}
+                "period": {
+                    "type": "string",
+                    "enum": ["last_month", "last_quarter", "last_year"],
+                }
             },
-            "required": ["period"]
-        }
+            "required": ["period"],
+        },
     },
     {
         "name": "compare_segments",
@@ -30,12 +36,15 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "metric": {"type": "string", "enum": ["mrr", "churn_rate", "active_users"]},
+                "metric": {
+                    "type": "string",
+                    "enum": ["mrr", "churn_rate", "active_users"],
+                },
                 "segment_a": {"type": "string"},
-                "segment_b": {"type": "string"}
+                "segment_b": {"type": "string"},
             },
-            "required": ["metric", "segment_a", "segment_b"]
-        }
+            "required": ["metric", "segment_a", "segment_b"],
+        },
     },
     {
         "name": "get_top_customers",
@@ -44,14 +53,14 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "sort_by": {"type": "string", "enum": ["mrr", "usage"]},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 25}
+                "limit": {"type": "integer", "minimum": 1, "maximum": 25},
             },
-            "required": ["sort_by", "limit"]
-        }
+            "required": ["sort_by", "limit"],
+        },
     },
     {
         "name": "list_active_alerts",
         "description": "List currently active billing/usage anomaly alerts. Admin only.",
-        "input_schema": {"type": "object", "properties": {}}
-    }
+        "input_schema": {"type": "object", "properties": {}},
+    },
 ]

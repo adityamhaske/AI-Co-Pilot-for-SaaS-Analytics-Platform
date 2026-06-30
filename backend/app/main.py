@@ -22,14 +22,16 @@ app.add_middleware(
 
 app.include_router(api_router, prefix="/api")
 
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
 
 @app.get("/")
 def read_root():
     return {
         "message": "SaaS Analytics AI Co-Pilot API is running.",
         "docs_url": "/docs",
-        "health_check": "/health"
+        "health_check": "/health",
     }

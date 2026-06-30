@@ -15,11 +15,13 @@ engine = create_engine(
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+
 @pytest.fixture(scope="session", autouse=True)
 def setup_db():
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
+
 
 @pytest.fixture
 def db_session():
@@ -28,6 +30,7 @@ def db_session():
         yield db
     finally:
         db.close()
+
 
 @pytest.fixture
 def client(db_session):
@@ -41,6 +44,7 @@ def client(db_session):
     yield TestClient(app)
     del app.dependency_overrides[get_db]
 
+
 @pytest.fixture
 def test_user(db_session):
     # Ensure tenant exists
@@ -49,7 +53,7 @@ def test_user(db_session):
         tenant = Tenant(id="tenant_test", name="Test Tenant")
         db_session.add(tenant)
         db_session.commit()
-    
+
     user = db_session.query(User).filter(User.email == "test@test.com").first()
     if not user:
         user = User(
@@ -57,7 +61,7 @@ def test_user(db_session):
             tenant_id=tenant.id,
             email="test@test.com",
             hashed_password=get_password_hash("password123"),
-            role="viewer"
+            role="viewer",
         )
         db_session.add(user)
         db_session.commit()
