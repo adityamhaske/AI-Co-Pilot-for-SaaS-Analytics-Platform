@@ -29,7 +29,16 @@ class Settings(BaseSettings):
 
     environment: Literal["development", "test", "production"] = "development"
 
+    # Which model provider answers questions. Only the selected provider's SDK and key
+    # are required; the others can be absent entirely.
+    llm_provider: Literal["anthropic", "openai", "gemini"] = "anthropic"
+    #: Override the provider's default model. Blank means the provider's default.
+    llm_model: str = ""
+
     anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    gemini_api_key: str = ""
+
     jwt_secret: str = ""
     database_url: str = "sqlite:///./test.db"
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:6002"])
@@ -102,8 +111,16 @@ class Settings(BaseSettings):
                     "DATABASE_URL points at SQLite in production. SQLite is single-writer "
                     "and lives on ephemeral container disk; use PostgreSQL."
                 )
-            if not self.anthropic_api_key:
-                raise ValueError("ANTHROPIC_API_KEY is required in production.")
+            required_key = {
+                "anthropic": ("ANTHROPIC_API_KEY", self.anthropic_api_key),
+                "openai": ("OPENAI_API_KEY", self.openai_api_key),
+                "gemini": ("GEMINI_API_KEY", self.gemini_api_key),
+            }[self.llm_provider]
+            if not required_key[1]:
+                raise ValueError(
+                    f"{required_key[0]} is required in production when "
+                    f"LLM_PROVIDER={self.llm_provider}."
+                )
 
         return self
 

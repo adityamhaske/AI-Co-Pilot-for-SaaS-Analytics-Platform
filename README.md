@@ -1,97 +1,150 @@
 # AI co-pilot for SaaS analytics
 
 [![CI](https://github.com/adityamhaske/AI-Co-Pilot-for-SaaS-Analytics-Platform/actions/workflows/ci.yml/badge.svg)](https://github.com/adityamhaske/AI-Co-Pilot-for-SaaS-Analytics-Platform/actions)
+[![Security](https://github.com/adityamhaske/AI-Co-Pilot-for-SaaS-Analytics-Platform/actions/workflows/security.yml/badge.svg)](https://github.com/adityamhaske/AI-Co-Pilot-for-SaaS-Analytics-Platform/actions/workflows/security.yml)
 
-Ask questions about SaaS metrics in plain English and get a streamed, chart-backed
-answer — where the model never writes SQL.
+Ask questions about SaaS metrics in plain English. Get a streamed, chart-backed answer
+where **the model never writes SQL and never decides what a metric means** — and every
+figure shows the query behind it.
 
-Claude is given a fixed set of typed tools (`get_metric_trend`, `get_metric_value`,
-`compare_segments`, …). It chooses *which* tool to call and with *what arguments*; it
-never writes SQL and never chooses what a metric means.
+![The co-pilot answering a multi-tool question about an MRR drop](docs/images/02-analysis.png)
 
-What a metric means is declared once, as data, in
-[`backend/app/metrics/definitions/`](backend/app/metrics/definitions). One YAML file per
-metric generates the SQL, the argument validation, the tool schema the model sees, and
-the RBAC scope — so MRR means exactly one thing everywhere, and a metric cannot be
-advertised to the model without an implementation behind it.
+One question, two tool calls, and an answer that names the numbers it used. The
+`get_metric_trend` line underneath is the actual call, with its actual arguments.
 
-Every tool call is authorised twice — once at exposure (the model is only shown the
-tools, and the metrics inside them, that the caller's role permits) and again at
-execution — and every query is scoped to the caller's tenant, taken from the verified
-JWT and never from model output.
+## What makes it different from a chat box over a database
 
-Answers carry their provenance: each figure shows the tool that produced it, the
-arguments it was called with, and the rows it returned. Conversations persist, so
-follow-up questions resolve against what was already asked.
+**Metrics are declared, not written.** One YAML file per metric in
+[`backend/app/metrics/definitions/`](backend/app/metrics/definitions) generates the SQL,
+the argument validation, the tool schema the model sees, and the RBAC scope. The model
+picks *which* registered metric and *which* arguments; it cannot invent a formula.
+
+```yaml
+name: mrr
+label: Monthly Recurring Revenue
+short_label: MRR
+description: >
+  Total monthly recurring revenue from subscriptions active as of the end of the period.
+kind: point_in_time_sum
+minimum_role: viewer
+supports: [trend, snapshot, compare]
+source:
+  model: subscription
+  value_column: mrr
+  interval_start: start_date
+  interval_end: end_date
+```
+
+That is the whole definition. `arr` is one more file saying *derived from mrr, factor 12*,
+so the two can never drift. This replaced a module that contained **three different
+definitions of MRR** — "MRR trend" and "compare MRR by segment" returned numbers that
+could not be reconciled.
+
+**It declines instead of guessing.** The system prompt permits only figures a tool
+returned. Asked for something no tool can answer, it says so:
+
+![The co-pilot refusing to forecast](docs/images/04-grounding.png)
+
+**A ratio shows its terms.** "16.7%" is not checkable. "2 of 12" is.
+
+![Churn rate with its numerator and denominator](docs/images/05-provenance.png)
+
+**Follow-ups resolve against context.** "Who were those two accounts?" only means
+something because the previous turn is in the conversation.
+
+![A follow-up question resolving against the previous turn](docs/images/03-followup.png)
+
+## Security boundary around the agent loop
+
+Every tool call is authorised **twice** — at exposure (the model is only shown the tools,
+and the metrics inside them, that the caller's role permits) and again at execution. Every
+query is scoped to the tenant in the verified JWT, never to anything the model produced.
+
+```
+Browser ──► POST /api/copilot/query  (Bearer access token, typ=access)
+              │
+              ├─ auth        verify signature, expiry, token type → {user, tenant, role}
+              ├─ guardrails  input screening; per-user daily cost ceiling
+              ├─ agent loop  bounded: MAX_AGENT_STEPS, token ceiling, wall clock
+              │     │
+              │     ├─► provider (Anthropic | OpenAI | Gemini), streaming
+              │     │      tools = only those this role permits
+              │     │
+              │     └─◄ one or more tool calls
+              │            ├─ re-check RBAC per call
+              │            ├─ validate arguments with Pydantic
+              │            ├─ compile the metric definition to tenant-scoped SQL
+              │            └─ return rows as data, never as instructions
+              │
+              └─► SSE: {type: token | tool_call | tool_result | usage | error}, [DONE]
+```
+
+Read [SECURITY.md](SECURITY.md) for what this does **not** cover — the prompt-injection
+guard is telemetry, not a control, and it says so.
+
+## Choose your model provider
+
+Set two environment variables. Only the selected provider's SDK and key are needed.
+
+```bash
+LLM_PROVIDER=anthropic     # or openai, or gemini
+ANTHROPIC_API_KEY=sk-...   # or OPENAI_API_KEY / GEMINI_API_KEY
+LLM_MODEL=                 # blank uses the provider's default
+```
+
+| Provider | Default model | Install |
+|---|---|---|
+| `anthropic` | `claude-sonnet-4-6` | `pip install anthropic` |
+| `openai` | `gpt-4.1` | `pip install openai` |
+| `gemini` | `gemini-2.5-pro` | `pip install google-genai` |
+
+The agent loop is provider-neutral: it speaks the types in
+[`app/providers/base.py`](backend/app/providers/base.py) and never touches a vendor SDK.
+Each adapter translates tool schemas, conversation shape and streaming events — the three
+things every vendor does differently, and the part that is
+[tested directly](backend/tests/test_providers.py). Spend is priced per provider, so
+switching does not silently meter against the wrong rates.
+
+## Dark theme
+
+Both themes are separately chosen sets of steps, not a lightness flip. Chart colours are
+validated for colour-vision separation and contrast against each surface.
+
+![The empty state in dark theme](docs/images/06-dark.png)
 
 ## Status — read this first
 
-This is a **working demonstration, not a product.** Being concrete about what that means:
+This is a **working demonstration, not a product.**
 
-- **The data is synthetic.** Everything is generated by `backend/app/db/seed.py` with
-  Faker. There is no connector and no import path for real metrics.
+- **The data is synthetic**, generated by `backend/app/db/seed.py`. There is no connector
+  and no import path for real metrics.
 - **There is no signup.** Accounts exist only because the seed script creates them.
-- **It has not been run in production**, and the metric definitions have not been
-  validated against a real accounting of revenue.
+- **It has not been run in production**, and the metric definitions have not been checked
+  against a real accounting of revenue.
+- **No accuracy figure is published**, because the eval suite has not been run against a
+  live API. Quoting one before measuring it is exactly the claim this project avoids.
 
-The part worth looking at is the security boundary around the agent loop: RBAC-scoped
-tool exposure, double authorisation, tenant scoping the model cannot influence, and a
-bounded loop with step/token ceilings. `OVERHAUL_PLAN.md` is a candid engineering review
-of everything still wrong with the rest.
-
-## How it works
-
-```
-Browser ──► POST /api/copilot/query  (Bearer access token)
-              │
-              ├─ auth        verify signature, expiry, typ=access → {user, tenant, role}
-              ├─ guardrails  input screening for injection patterns
-              ├─ agent loop  bounded: MAX_AGENT_STEPS, token ceiling
-              │     │
-              │     ├─► Anthropic Messages API (streaming)
-              │     │      tools = only those the caller's role permits
-              │     │
-              │     └─◄ one or more tool_use blocks
-              │            ├─ re-check RBAC per tool
-              │            ├─ validate arguments with Pydantic
-              │            ├─ execute parameterised SQL, scoped to the JWT's tenant
-              │            └─ return the rows as data, never as instructions
-              │
-              └─► SSE: {type: token | tool_call | tool_result | usage | error}, then [DONE]
-```
-
-## Tech stack
-
-| Layer | Choice |
-|---|---|
-| Frontend | React + Vite + TypeScript, Tailwind, shadcn/ui, Recharts |
-| Backend | FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic |
-| LLM | Anthropic API (Claude), tool use, streaming |
-| Streaming | Server-Sent Events, hand-rolled over FastAPI's `StreamingResponse` |
-| Auth | JWT via `python-jose`; bcrypt password hashing |
-| Database | SQLite locally, PostgreSQL for deployment (`DATABASE_URL`) |
-| Rate limiting | slowapi, plus a per-user daily cost ceiling metered from token usage |
-| Serving | gunicorn + uvicorn workers; nginx for the static bundle |
-| CI | GitHub Actions |
+[OVERHAUL_PLAN.md](OVERHAUL_PLAN.md) is a candid engineering review of what was broken and
+what it would take to make this real.
 
 ## Getting started
 
-**Prerequisites:** Node.js 20+, Python 3.11+, an Anthropic API key.
+**Prerequisites:** Node.js 20+, Python 3.11+, and an API key for one provider.
 
 ### Docker
 
-The Compose stack is production-shaped: Postgres, migrations as a one-shot service, the
-API under gunicorn, and the frontend built and served by nginx.
+Production-shaped: Postgres, migrations as a one-shot service, the API under gunicorn, the
+frontend built and served by nginx.
 
 ```bash
-cp backend/.env.example backend/.env   # then set ANTHROPIC_API_KEY and JWT_SECRET
+cp backend/.env.example backend/.env   # set LLM_PROVIDER and the matching API key
 docker compose up --build
 ```
 
-Open <http://localhost:8080>. Log in with `admin@test.com` / `password123`.
+Open <http://localhost:8080>. Sign in as `admin@test.com` / `password123`.
 
-Seeded roles are `admin@test.com`, `analyst@test.com` and `viewer@test.com` (same
-password) — worth trying more than one, since the available tools change with the role.
+Seeded roles are `admin@test.com`, `analyst@test.com` and `viewer@test.com` — worth trying
+more than one, since the available tools and metrics change with the role.
 
 ### Manual
 
@@ -100,9 +153,9 @@ password) — worth trying more than one, since the available tools change with 
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env    # set ANTHROPIC_API_KEY and JWT_SECRET (see below)
+cp .env.example .env    # set LLM_PROVIDER, its API key, and JWT_SECRET
 alembic upgrade head
-python -m app.db.seed   # synthetic multi-tenant data + the demo login
+python -m app.db.seed   # reproducible synthetic multi-tenant data
 uvicorn app.main:app --reload --port 6001
 ```
 
@@ -113,55 +166,63 @@ npm install
 npm run dev
 ```
 
-`JWT_SECRET` must be at least 32 characters; the app refuses to start otherwise, and
-rejects known placeholder values. Generate one with:
+`JWT_SECRET` must be at least 32 characters; the app refuses to start otherwise and
+rejects known placeholders. Generate one with:
 
 ```bash
 python -c 'import secrets; print(secrets.token_urlsafe(48))'
 ```
 
-### Tests
+## Tests and evals
 
 ```bash
 cd backend && ENVIRONMENT=test PYTHONPATH=. pytest
 ```
 
-`ENVIRONMENT=test` relaxes the secret requirements so the suite runs without a real key.
+282 tests, no API key needed. Metric arithmetic is deterministic and asserted to exact
+numbers; provider translation, tenant isolation, token revocation and the agent loop's
+bounds are all covered.
 
-### Evals
-
-Metric arithmetic is deterministic and tested exactly, without an API key. What is *not*
-deterministic is whether the model picks the right tool with the right arguments — so
-that is measured separately, against 26 golden questions covering direct and indirect
-phrasing, granularity, multi-tool requests, out-of-scope questions it should decline,
-RBAC probes, and prompt-injection attempts.
+What is *not* deterministic is whether the model picks the right tool with the right
+arguments. That is measured separately against 26 golden questions — direct and indirect
+phrasing, granularity, multi-tool requests, out-of-scope questions it should decline, RBAC
+probes, and prompt-injection attempts:
 
 ```bash
 cd backend && ANTHROPIC_API_KEY=sk-... PYTHONPATH=. python -m evals.runner
 ```
 
-This calls the real API and costs money, so it runs nightly rather than per commit. The
+This calls a real API and costs money, so it runs nightly rather than per commit. The
 harness itself — dataset integrity and the fixture's hand-computed expected values — is
-verified on every commit without a key. See [`backend/evals/README.md`](backend/evals/README.md).
+verified on every commit without a key. See [backend/evals/README.md](backend/evals/README.md).
 
-> No accuracy figure is published yet: the suite has not been run against the live API.
-> Quoting one before measuring it would be exactly the kind of claim this project is
-> trying not to make.
+## Tech stack
+
+| Layer | Choice |
+|---|---|
+| Frontend | React 19 + Vite + TypeScript, Tailwind with semantic tokens, Recharts |
+| Backend | FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic |
+| LLM | Anthropic, OpenAI or Gemini — selected by config |
+| Streaming | Server-Sent Events over `StreamingResponse` |
+| Auth | JWT with typed access/refresh tokens, rotation and revocation; bcrypt |
+| Database | SQLite locally, PostgreSQL for deployment |
+| Limits | slowapi, plus a per-user daily cost ceiling metered from token usage |
+| Serving | gunicorn + uvicorn workers; nginx for the static bundle |
+| CI | GitHub Actions — lint, typecheck, tests, dependency and secret scanning, nightly evals |
 
 ## Documentation
 
 | File | What's in it |
 |---|---|
-| `OVERHAUL_PLAN.md` | Engineering review: what's broken, what it would take to make this real |
-| `docs/architecture/metric-registry.md` | The metric definition format, and why metrics are declared rather than coded |
-| `docs/architecture/overview.md` | System design and request lifecycle |
-| `docs/reference/api.md` | Endpoints, the SSE event contract, tool schemas |
-| `SECURITY.md` | Reporting a vulnerability, and known limitations |
-| `docs/security/design.md` | Token design, RBAC matrix, injection defences and their limits |
-| `backend/evals/README.md` | What the evals measure and how to add a case |
-| `CONTRIBUTING.md` | Local dev workflow and what review asks about |
-| `CHANGELOG.md` | What changed and why |
-| `docs/guides/deployment.md` | Deployment notes |
+| [OVERHAUL_PLAN.md](OVERHAUL_PLAN.md) | Engineering review: what was broken, what a product would need |
+| [docs/architecture/metric-registry.md](docs/architecture/metric-registry.md) | The metric definition format, and why metrics are declared |
+| [docs/architecture/overview.md](docs/architecture/overview.md) | System design and request lifecycle |
+| [docs/reference/api.md](docs/reference/api.md) | Endpoints, the SSE event contract, tool schemas |
+| [SECURITY.md](SECURITY.md) | Reporting a vulnerability, and known limitations |
+| [docs/security/design.md](docs/security/design.md) | Token design, RBAC matrix, injection defences and their limits |
+| [backend/evals/README.md](backend/evals/README.md) | What the evals measure and how to add a case |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Local development and what review asks about |
+| [CHANGELOG.md](CHANGELOG.md) | What changed and why |
 
 ## License
 

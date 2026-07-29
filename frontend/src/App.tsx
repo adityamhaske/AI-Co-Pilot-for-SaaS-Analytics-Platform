@@ -8,7 +8,12 @@ import { EmptyState } from "@/features/chat/EmptyState";
 import { MessageList, type ChatMessage } from "@/features/chat/MessageList";
 import { useChat } from "@/features/chat/useChat";
 import { Sidebar } from "@/features/conversations/Sidebar";
-import { api, type ConversationSummary, type CurrentUser } from "@/lib/api";
+import {
+  api,
+  type ConversationSummary,
+  type CurrentUser,
+  type Overview,
+} from "@/lib/api";
 
 type Theme = "light" | "dark";
 
@@ -32,6 +37,9 @@ export default function App() {
   const [loadingList, setLoadingList] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(null);
 
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(true);
+
   const [theme, setTheme] = useState<Theme>(() => readStoredTheme() ?? systemTheme());
   const [navOpen, setNavOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -51,6 +59,7 @@ export default function App() {
     setToken(null);
     setUser(null);
     setConversations([]);
+    setOverview(null);
     setActiveId(null);
   }, []);
 
@@ -121,6 +130,27 @@ export default function App() {
       })
       .finally(() => {
         if (!cancelled) setLoadingList(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, listKey]);
+
+  // The overview is refetched on the same key as the conversation list, so a turn that
+  // moved a number updates the strip too.
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    api
+      .overview(token)
+      .then((data) => {
+        if (!cancelled) setOverview(data);
+      })
+      .catch(() => {
+        /* the strip stays as it was, or shows skeletons on first load */
+      })
+      .finally(() => {
+        if (!cancelled) setOverviewLoading(false);
       });
     return () => {
       cancelled = true;
@@ -228,6 +258,8 @@ export default function App() {
           activeId={activeId}
           loading={loadingList}
           user={user}
+          overview={overview}
+          overviewLoading={overviewLoading}
           theme={theme}
           onSelect={openConversation}
           onNew={startNew}

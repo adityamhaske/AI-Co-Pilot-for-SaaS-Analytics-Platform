@@ -1,5 +1,6 @@
 name: mrr
 label: Monthly Recurring Revenue
+short_label: MRR
 description: >
   Total monthly recurring revenue from subscriptions active as of the end of the period.
   MRR is a point-in-time measure: a subscription that cancelled part-way through a month

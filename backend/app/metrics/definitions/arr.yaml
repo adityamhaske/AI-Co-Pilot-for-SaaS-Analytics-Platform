@@ -1,5 +1,6 @@
 name: arr
 label: Annual Recurring Revenue
+short_label: ARR
 description: >
   Annualised recurring revenue: monthly recurring revenue multiplied by twelve. Derived
   from the mrr metric so the two can never diverge.

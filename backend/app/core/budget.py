@@ -17,16 +17,19 @@ from app.db.models import UsageRecord, utcnow
 
 logger = structlog.get_logger()
 
-# Published per-million-token prices for the model in app/streaming/sse.py. Kept here so
-# the cost figure is auditable rather than a magic constant buried in a handler.
-INPUT_COST_PER_MTOK = 3.00
-OUTPUT_COST_PER_MTOK = 15.00
 
+def estimate_cost(
+    input_tokens: int, output_tokens: int, provider: str | None = None
+) -> float:
+    """Dollar cost of a turn, priced for the provider that served it.
 
-def estimate_cost(input_tokens: int, output_tokens: int) -> float:
-    dollars = (
-        input_tokens * INPUT_COST_PER_MTOK + output_tokens * OUTPUT_COST_PER_MTOK
-    ) / 1_000_000
+    Rates live in app/providers/PRICING so switching provider re-prices the budget
+    automatically rather than silently metering against the wrong numbers.
+    """
+    from app.providers import pricing_for
+
+    input_rate, output_rate = pricing_for(provider or settings.llm_provider)
+    dollars = (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000
     return round(dollars, 6)
 
 

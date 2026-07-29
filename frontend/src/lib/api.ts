@@ -15,6 +15,24 @@ export interface CurrentUser {
   tenant_id: string;
 }
 
+export interface OverviewTile {
+  metric: string;
+  label: string;
+  unit: string;
+  value: number;
+  delta: number | null;
+  spark: number[];
+}
+
+export interface Overview {
+  tiles: OverviewTile[];
+  generated_at: string;
+  provider: string;
+  model: string;
+  spend_today_usd: number;
+  daily_limit_usd: number;
+}
+
 export interface ConversationSummary {
   id: string;
   title: string;
@@ -117,6 +135,8 @@ export const api = {
     }),
 
   me: (token: string) => request<CurrentUser>("/api/auth/me", token),
+
+  overview: (token: string) => request<Overview>("/api/overview", token),
 
   listConversations: (token: string) =>
     request<ConversationSummary[]>("/api/conversations", token),

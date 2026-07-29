@@ -1,5 +1,6 @@
 name: churn_rate
 label: Churn Rate
+short_label: Churn
 description: >
   Logo churn: subscriptions that ended during the period, divided by the number of
   subscriptions that were already active when the period opened. Expressed as a

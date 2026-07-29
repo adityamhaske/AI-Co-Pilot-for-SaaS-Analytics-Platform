@@ -134,7 +134,11 @@ export function MessageList({
   }, [messages]);
 
   return (
-    <div ref={containerRef} className="scroll-region h-full overflow-y-auto">
+    <div
+      ref={containerRef}
+      data-thread=""
+      className="scroll-region h-full overflow-y-auto"
+    >
       <div className="mx-auto flex max-w-3xl flex-col gap-7 px-4 py-6 sm:px-6">
         {messages.map((message) => (
           <MessageRow

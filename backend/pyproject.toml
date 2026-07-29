@@ -24,6 +24,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Alternative model providers. Install only the one LLM_PROVIDER selects.
+openai = ["openai>=1.40"]
+gemini = ["google-genai>=1.0"]
 dev = [
     "pytest>=8.2.2",
     "pytest-asyncio>=0.23.7",

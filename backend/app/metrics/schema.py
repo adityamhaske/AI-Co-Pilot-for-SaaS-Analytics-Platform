@@ -107,6 +107,8 @@ class MetricDefinition(BaseModel):
 
     name: str
     label: str
+    #: A compact label for tight UI like the overview tiles. Falls back to `label`.
+    short_label: str | None = None
     description: str
     kind: MetricKind
     unit: str = "count"
@@ -161,6 +163,10 @@ class MetricDefinition(BaseModel):
                 raise ValueError(f"{kind.value} metrics require source.{field}")
 
         return self
+
+    @property
+    def display_short(self) -> str:
+        return self.short_label or self.label
 
     def allowed_for(self, role: str) -> bool:
         return ROLE_RANK.get(role, -1) >= ROLE_RANK[self.minimum_role]

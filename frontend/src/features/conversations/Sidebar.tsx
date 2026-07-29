@@ -11,9 +11,10 @@ import {
   SunIcon,
   TrashIcon,
 } from "@/components/ui/icons";
-import { Button, IconButton, Input, Skeleton } from "@/components/ui/primitives";
-import type { ConversationSummary, CurrentUser } from "@/lib/api";
-import { initialsFor, relativeDateGroup, titleCase } from "@/lib/format";
+import { Badge, Button, IconButton, Input, Skeleton } from "@/components/ui/primitives";
+import { MetricStrip } from "@/features/overview/MetricStrip";
+import type { ConversationSummary, CurrentUser, Overview } from "@/lib/api";
+import { formatValue, initialsFor, relativeDateGroup, titleCase } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const GROUP_ORDER = [
@@ -35,6 +36,8 @@ export function Sidebar({
   activeId,
   loading,
   user,
+  overview,
+  overviewLoading,
   theme,
   onSelect,
   onNew,
@@ -48,6 +51,8 @@ export function Sidebar({
   activeId: string | null;
   loading: boolean;
   user: CurrentUser | null;
+  overview: Overview | null;
+  overviewLoading: boolean;
   theme: "light" | "dark";
   onSelect: (id: string) => void;
   onNew: () => void;
@@ -93,9 +98,22 @@ export function Sidebar({
         <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent text-accent-ink">
           <SparkIcon className="h-4 w-4" />
         </div>
-        <span className="flex-1 truncate text-sm font-semibold text-ink">
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">
           Analytics Co-pilot
         </span>
+        {user && (
+          <Badge
+            className={
+              user.role === "admin"
+                ? "border-accent/40 bg-accent-subtle text-accent"
+                : user.role === "analyst"
+                  ? "border-line bg-surface-hover text-ink-secondary"
+                  : "border-line text-ink-muted"
+            }
+          >
+            {user.role}
+          </Badge>
+        )}
         {onClose && (
           <IconButton label="Close navigation" size="sm" onClick={onClose} className="lg:hidden">
             <CloseIcon />
@@ -103,11 +121,20 @@ export function Sidebar({
         )}
       </div>
 
-      <div className="p-3">
+      <div className="space-y-3 p-3">
         <Button variant="secondary" onClick={onNew} className="w-full justify-start">
           <PlusIcon />
           New conversation
         </Button>
+
+        {/* Live figures from the same registry the agent queries, so this strip and the
+            answers below it can never disagree. */}
+        <div>
+          <h2 className="mb-1.5 px-0.5 text-2xs font-semibold uppercase tracking-wide text-ink-muted">
+            This month
+          </h2>
+          <MetricStrip tiles={overview?.tiles ?? []} loading={overviewLoading} />
+        </div>
       </div>
 
       {/* History */}
@@ -237,6 +264,28 @@ export function Sidebar({
 
       {/* Account */}
       <div className="border-t border-line p-2">
+        {overview && (
+          // Which model answered, and what today has cost. Both are facts a user of an
+          // LLM product should not have to guess at.
+          <div className="mb-1 flex items-center justify-between gap-2 px-2 py-1 text-2xs text-ink-muted">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span
+                aria-hidden="true"
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"
+              />
+              <span className="truncate font-mono">{overview.model}</span>
+            </span>
+            <span
+              className="shrink-0 tabular-nums"
+              title={`Rolling 24-hour spend against a ${formatValue(
+                overview.daily_limit_usd,
+                "currency_usd"
+              )} limit`}
+            >
+              {formatValue(overview.spend_today_usd, "currency_usd")} today
+            </span>
+          </div>
+        )}
         <div className="flex items-center gap-2 rounded-md px-2 py-1.5">
           <div
             aria-hidden="true"
