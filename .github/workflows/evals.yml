@@ -1,0 +1,67 @@
+name: Evals
+
+# These call the real Anthropic API, so they cost money and need a secret. They do not
+# run on pull requests from forks. The harness itself — dataset integrity and the
+# fixture's expected values — is checked without an API key by the normal test job.
+on:
+  schedule:
+    # 06:00 UTC daily. Model behaviour drifts; a nightly number catches it.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      category:
+        description: 'Only run one category (direct, rbac, adversarial, ...)'
+        required: false
+      threshold:
+        description: 'Minimum accuracy to pass'
+        required: false
+        default: '0.85'
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    # Without a key the run would fail for the wrong reason.
+    if: github.repository_owner != ''
+    defaults:
+      run:
+        working-directory: ./backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run migrations
+        env:
+          ENVIRONMENT: development
+          JWT_SECRET: ${{ secrets.JWT_SECRET || 'ci-only-secret-not-used-for-anything-real' }}
+          DATABASE_URL: sqlite:///./evals.db
+        run: alembic upgrade head
+
+      - name: Run evals
+        env:
+          ENVIRONMENT: development
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET || 'ci-only-secret-not-used-for-anything-real' }}
+          DATABASE_URL: sqlite:///./evals.db
+        run: |
+          PYTHONPATH=. python -m evals.runner \
+            --threshold "${{ github.event.inputs.threshold || '0.85' }}" \
+            ${{ github.event.inputs.category && format('--category {0}', github.event.inputs.category) || '' }} \
+            --json eval-results.json
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: backend/eval-results.json
+          retention-days: 30

@@ -5,11 +5,20 @@
 Ask questions about SaaS metrics in plain English and get a streamed, chart-backed
 answer — where the model never writes SQL.
 
-Claude is given a fixed set of typed tools (`get_metric_trend`, `get_churn_rate`, …).
-It chooses *which* tool to call and with *what arguments*; hand-written handlers own the
-actual SQL. Every tool call is authorised twice — once at exposure (the model is only
-shown the tools the caller's role permits) and again at execution — and every query is
-scoped to the caller's tenant, taken from the verified JWT and never from model output.
+Claude is given a fixed set of typed tools (`get_metric_trend`, `get_metric_value`,
+`compare_segments`, …). It chooses *which* tool to call and with *what arguments*; it
+never writes SQL and never chooses what a metric means.
+
+What a metric means is declared once, as data, in
+[`backend/app/metrics/definitions/`](backend/app/metrics/definitions). One YAML file per
+metric generates the SQL, the argument validation, the tool schema the model sees, and
+the RBAC scope — so MRR means exactly one thing everywhere, and a metric cannot be
+advertised to the model without an implementation behind it.
+
+Every tool call is authorised twice — once at exposure (the model is only shown the
+tools, and the metrics inside them, that the caller's role permits) and again at
+execution — and every query is scoped to the caller's tenant, taken from the verified
+JWT and never from model output.
 
 ## Status — read this first
 
@@ -108,14 +117,36 @@ cd backend && ENVIRONMENT=test PYTHONPATH=. pytest
 
 `ENVIRONMENT=test` relaxes the secret requirements so the suite runs without a real key.
 
+### Evals
+
+Metric arithmetic is deterministic and tested exactly, without an API key. What is *not*
+deterministic is whether the model picks the right tool with the right arguments — so
+that is measured separately, against 26 golden questions covering direct and indirect
+phrasing, granularity, multi-tool requests, out-of-scope questions it should decline,
+RBAC probes, and prompt-injection attempts.
+
+```bash
+cd backend && ANTHROPIC_API_KEY=sk-... PYTHONPATH=. python -m evals.runner
+```
+
+This calls the real API and costs money, so it runs nightly rather than per commit. The
+harness itself — dataset integrity and the fixture's hand-computed expected values — is
+verified on every commit without a key. See [`backend/evals/README.md`](backend/evals/README.md).
+
+> No accuracy figure is published yet: the suite has not been run against the live API.
+> Quoting one before measuring it would be exactly the kind of claim this project is
+> trying not to make.
+
 ## Documentation
 
 | File | What's in it |
 |---|---|
 | `OVERHAUL_PLAN.md` | Engineering review: what's broken, what it would take to make this real |
+| `docs/ADDING_A_METRIC.md` | The metric definition format, and why metrics are declared rather than coded |
 | `docs/ARCHITECTURE.md` | System design and request lifecycle |
 | `docs/API_REFERENCE.md` | Endpoints, the SSE event contract, tool schemas |
 | `docs/SECURITY.md` | Token design, RBAC matrix, injection defences and their limits |
+| `backend/evals/README.md` | What the evals measure and how to add a case |
 | `docs/CONTRIBUTING.md` | Local dev workflow and conventions |
 | `docs/DEPLOYMENT.md` | Deployment notes |
 

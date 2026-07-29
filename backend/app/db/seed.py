@@ -1,3 +1,4 @@
+import argparse
 import random
 from datetime import timedelta
 
@@ -17,8 +18,16 @@ from app.db.session import SessionLocal, engine
 
 fake = Faker()
 
+# Seeding both generators makes a run reproducible. Without this the demo database was
+# different every time, so no assertion could ever be made about what it contains.
+DEFAULT_SEED = 20260101
 
-def seed_db():
+
+def seed_db(seed: int | None = DEFAULT_SEED):
+    if seed is not None:
+        random.seed(seed)
+        Faker.seed(seed)
+
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
 
@@ -126,4 +135,12 @@ def seed_db():
 
 
 if __name__ == "__main__":
-    seed_db()
+    parser = argparse.ArgumentParser(description="Generate synthetic demo data.")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=DEFAULT_SEED,
+        help="RNG seed; pass --seed -1 for a different dataset each run",
+    )
+    args = parser.parse_args()
+    seed_db(None if args.seed < 0 else args.seed)
