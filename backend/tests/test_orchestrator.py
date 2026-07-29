@@ -175,7 +175,11 @@ async def test_parallel_tool_calls_each_get_a_tool_result(db_session):
     first = MockFinalMessage(
         stop_reason="tool_use",
         content=[
-            MockToolUseBlock("toolu_a", "get_churn_rate", {"period": "last_month"}),
+            MockToolUseBlock(
+                "toolu_a",
+                "get_metric_value",
+                {"metric": "churn_rate", "period": "last_month"},
+            ),
             MockToolUseBlock(
                 "toolu_b", "get_top_customers", {"sort_by": "mrr", "limit": 3}
             ),
@@ -196,7 +200,7 @@ async def test_parallel_tool_calls_each_get_a_tool_result(db_session):
         return MockStream([MockEvent("text", text="Both are ready.")], second)
 
     with patch("app.streaming.sse.client.messages.stream", side_effect=make_stream):
-        with patch("app.streaming.sse.execute_tool", return_value={"ok": True}):
+        with patch("app.orchestrator.tools.execute", return_value={"ok": True}):
             output = await collect(
                 stream_orchestrator(
                     db_session, "tenant_test", "admin", "Churn and top customers?"
@@ -221,7 +225,11 @@ async def test_parallel_tool_calls_announce_each_tool(db_session):
     first = MockFinalMessage(
         stop_reason="tool_use",
         content=[
-            MockToolUseBlock("toolu_a", "get_churn_rate", {"period": "last_month"}),
+            MockToolUseBlock(
+                "toolu_a",
+                "get_metric_value",
+                {"metric": "churn_rate", "period": "last_month"},
+            ),
             MockToolUseBlock(
                 "toolu_b", "get_top_customers", {"sort_by": "mrr", "limit": 3}
             ),
@@ -233,7 +241,7 @@ async def test_parallel_tool_calls_announce_each_tool(db_session):
         MockEvent(
             "content_block_start",
             index=0,
-            content_block=MockToolUseBlock("toolu_a", "get_churn_rate", {}),
+            content_block=MockToolUseBlock("toolu_a", "get_metric_value", {}),
         ),
         MockEvent(
             "content_block_start",
@@ -244,13 +252,13 @@ async def test_parallel_tool_calls_announce_each_tool(db_session):
     make, _ = scripted_streams((start_events, first), ([], second))
 
     with patch("app.streaming.sse.client.messages.stream", side_effect=make):
-        with patch("app.streaming.sse.execute_tool", return_value=[{"a": 1}]):
+        with patch("app.orchestrator.tools.execute", return_value=[{"a": 1}]):
             output = await collect(
                 stream_orchestrator(db_session, "tenant_test", "admin", "Two things")
             )
 
     names = [e["name"] for e in parse_events(output) if e.get("type") == "tool_call"]
-    assert names == ["get_churn_rate", "get_top_customers"]
+    assert names == ["get_metric_value", "get_top_customers"]
 
 
 # ---------------------------------------------------------------------------
@@ -263,7 +271,11 @@ async def test_unauthorized_tool_yields_no_data_and_terminates(db_session):
     first = MockFinalMessage(
         stop_reason="tool_use",
         content=[
-            MockToolUseBlock("toolu_x", "get_churn_rate", {"period": "last_month"})
+            MockToolUseBlock(
+                "toolu_x",
+                "get_metric_value",
+                {"metric": "churn_rate", "period": "last_month"},
+            )
         ],
     )
     second = MockFinalMessage(stop_reason="end_turn")
@@ -290,7 +302,11 @@ async def test_loop_is_bounded_by_max_agent_steps(db_session):
     always_tool_use = MockFinalMessage(
         stop_reason="tool_use",
         content=[
-            MockToolUseBlock("toolu_loop", "get_churn_rate", {"period": "last_month"})
+            MockToolUseBlock(
+                "toolu_loop",
+                "get_metric_value",
+                {"metric": "churn_rate", "period": "last_month"},
+            )
         ],
     )
 
@@ -301,7 +317,7 @@ async def test_loop_is_bounded_by_max_agent_steps(db_session):
         return MockStream([], always_tool_use)
 
     with patch("app.streaming.sse.client.messages.stream", side_effect=make_stream):
-        with patch("app.streaming.sse.execute_tool", return_value={"ok": True}):
+        with patch("app.orchestrator.tools.execute", return_value={"ok": True}):
             output = await collect(
                 stream_orchestrator(db_session, "tenant_test", "admin", "loop forever")
             )
@@ -317,7 +333,11 @@ async def test_tool_exception_does_not_leak_internals(db_session):
     first = MockFinalMessage(
         stop_reason="tool_use",
         content=[
-            MockToolUseBlock("toolu_e", "get_churn_rate", {"period": "last_month"})
+            MockToolUseBlock(
+                "toolu_e",
+                "get_metric_value",
+                {"metric": "churn_rate", "period": "last_month"},
+            )
         ],
     )
     second = MockFinalMessage(stop_reason="end_turn")
@@ -330,7 +350,7 @@ async def test_tool_exception_does_not_leak_internals(db_session):
         return MockStream([], first) if len(captured) == 1 else MockStream([], second)
 
     with patch("app.streaming.sse.client.messages.stream", side_effect=make_stream):
-        with patch("app.streaming.sse.execute_tool", side_effect=RuntimeError(secret)):
+        with patch("app.orchestrator.tools.execute", side_effect=RuntimeError(secret)):
             output = await collect(
                 stream_orchestrator(db_session, "tenant_test", "admin", "boom")
             )
@@ -360,7 +380,7 @@ async def test_invalid_tool_arguments_are_explained_to_the_model(db_session):
 
     with patch("app.streaming.sse.client.messages.stream", side_effect=make_stream):
         with patch(
-            "app.streaming.sse.execute_tool",
+            "app.orchestrator.tools.execute",
             side_effect=ValueError("granularity must be one of day, week, month"),
         ):
             await collect(

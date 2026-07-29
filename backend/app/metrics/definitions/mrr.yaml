@@ -1,0 +1,19 @@
+name: mrr
+label: Monthly Recurring Revenue
+description: >
+  Total monthly recurring revenue from subscriptions active as of the end of the period.
+  MRR is a point-in-time measure: a subscription that cancelled part-way through a month
+  is not counted in that month's closing MRR, but is counted in every earlier period it
+  was live for.
+unit: currency_usd
+kind: point_in_time_sum
+minimum_role: viewer
+supports: [trend, snapshot, compare]
+
+source:
+  model: subscription
+  value_column: mrr
+  interval_start: start_date
+  # NULL end_date means the subscription is still running.
+  interval_end: end_date
+  entity_column: customer_id

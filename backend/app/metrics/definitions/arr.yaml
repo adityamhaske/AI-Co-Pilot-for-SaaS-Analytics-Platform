@@ -1,0 +1,12 @@
+name: arr
+label: Annual Recurring Revenue
+description: >
+  Annualised recurring revenue: monthly recurring revenue multiplied by twelve. Derived
+  from the mrr metric so the two can never diverge.
+unit: currency_usd
+kind: derived
+minimum_role: viewer
+supports: [trend, snapshot, compare]
+
+base: mrr
+factor: 12

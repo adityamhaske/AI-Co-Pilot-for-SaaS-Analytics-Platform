@@ -4,13 +4,15 @@ import os
 # so the fail-fast JWT_SECRET validation doesn't require a real secret in test runs.
 os.environ.setdefault("ENVIRONMENT", "test")
 
+import datetime
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core.security import get_password_hash
-from app.db.models import Tenant, User
+from app.db.models import Customer, Subscription, Tenant, UsageEvent, User
 from app.db.session import Base, get_db
 from app.main import app
 
@@ -72,3 +74,125 @@ def test_user(db_session):
         db_session.add(user)
         db_session.commit()
     return user
+
+
+# ---------------------------------------------------------------------------
+# Metric fixtures
+#
+# A hand-built dataset with known answers, so metric tests assert exact numbers:
+#
+#     sub_a  Alpha (enterprise)  mrr=100  2026-01-01 -> open ended
+#     sub_b  Beta  (smb)         mrr=200  2026-02-01 -> 2026-03-15 (cancelled)
+#
+# Expected closing MRR by month: Jan 100, Feb 300, Mar 100, Apr 100. March drops back
+# because sub_b cancelled on the 15th and MRR is measured as of the end of the period.
+# A third subscription worth 9999 sits in another tenant and must never appear.
+# ---------------------------------------------------------------------------
+
+TENANT = "tenant_metrics"
+OTHER_TENANT = "tenant_other"
+
+D = datetime.date
+DT = datetime.datetime
+
+
+@pytest.fixture
+def metrics_data(db_session):
+    for tid in (TENANT, OTHER_TENANT):
+        if not db_session.query(Tenant).filter(Tenant.id == tid).first():
+            db_session.add(Tenant(id=tid, name=tid))
+
+    db_session.add_all(
+        [
+            Customer(
+                id="cust_a",
+                tenant_id=TENANT,
+                name="Alpha",
+                segment="enterprise",
+                created_at=DT(2026, 1, 5),
+            ),
+            Customer(
+                id="cust_b",
+                tenant_id=TENANT,
+                name="Beta",
+                segment="smb",
+                created_at=DT(2026, 2, 10),
+            ),
+            Subscription(
+                id="sub_a",
+                tenant_id=TENANT,
+                customer_id="cust_a",
+                mrr=100.0,
+                start_date=D(2026, 1, 1),
+                end_date=None,
+                status="active",
+            ),
+            Subscription(
+                id="sub_b",
+                tenant_id=TENANT,
+                customer_id="cust_b",
+                mrr=200.0,
+                start_date=D(2026, 2, 1),
+                end_date=D(2026, 3, 15),
+                status="canceled",
+            ),
+            Customer(
+                id="cust_x",
+                tenant_id=OTHER_TENANT,
+                name="Xeno",
+                segment="enterprise",
+                created_at=DT(2026, 1, 5),
+            ),
+            Subscription(
+                id="sub_x",
+                tenant_id=OTHER_TENANT,
+                customer_id="cust_x",
+                mrr=9999.0,
+                start_date=D(2026, 1, 1),
+                end_date=None,
+                status="active",
+            ),
+            UsageEvent(
+                id="evt_a1",
+                tenant_id=TENANT,
+                customer_id="cust_a",
+                event_type="login",
+                timestamp=DT(2026, 1, 10),
+            ),
+            UsageEvent(
+                id="evt_a2",
+                tenant_id=TENANT,
+                customer_id="cust_a",
+                event_type="login",
+                timestamp=DT(2026, 1, 11),
+            ),
+            UsageEvent(
+                id="evt_b1",
+                tenant_id=TENANT,
+                customer_id="cust_b",
+                event_type="login",
+                timestamp=DT(2026, 2, 3),
+            ),
+            UsageEvent(
+                id="evt_x1",
+                tenant_id=OTHER_TENANT,
+                customer_id="cust_x",
+                event_type="login",
+                timestamp=DT(2026, 1, 10),
+            ),
+        ]
+    )
+    db_session.commit()
+    yield db_session
+
+    for model, ids in (
+        (UsageEvent, ["evt_a1", "evt_a2", "evt_b1", "evt_x1"]),
+        (Subscription, ["sub_a", "sub_b", "sub_x"]),
+        (Customer, ["cust_a", "cust_b", "cust_x"]),
+        (Tenant, [TENANT, OTHER_TENANT]),
+    ):
+        if ids:
+            db_session.query(model).filter(model.id.in_(ids)).delete(
+                synchronize_session=False
+            )
+    db_session.commit()

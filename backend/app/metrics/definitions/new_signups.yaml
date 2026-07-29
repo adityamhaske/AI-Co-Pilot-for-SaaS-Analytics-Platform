@@ -1,0 +1,13 @@
+name: new_signups
+label: New Signups
+description: >
+  Number of customer accounts created during the period.
+unit: count
+kind: row_count
+minimum_role: viewer
+supports: [trend, snapshot]
+
+source:
+  model: customer
+  timestamp_column: created_at
+  entity_column: id

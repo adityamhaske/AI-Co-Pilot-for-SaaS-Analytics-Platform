@@ -2,17 +2,25 @@ from fastapi import Depends, HTTPException, Request, status
 
 from app.core.security import verify_token
 
-# RBAC Matrix
+# RBAC matrix.
+#
+# This gates the *tool* (the query shape). Which *metrics* a role may read through those
+# tools is a second, independent gate: `minimum_role` on each definition in
+# app/metrics/definitions. A role needs to pass both, so widening one never silently
+# widens the other.
+#
+# `get_metric_value` replaced the single-purpose `get_churn_rate`: it reads any metric
+# that declares snapshot support, churn included.
 ROLE_PERMISSIONS = {
     "viewer": {
         "endpoints": ["/api/copilot/query"],
-        "tools": ["get_metric_trend", "get_churn_rate"],
+        "tools": ["get_metric_trend", "get_metric_value"],
     },
     "analyst": {
         "endpoints": ["/api/copilot/query"],
         "tools": [
             "get_metric_trend",
-            "get_churn_rate",
+            "get_metric_value",
             "compare_segments",
             "get_top_customers",
         ],
@@ -21,7 +29,7 @@ ROLE_PERMISSIONS = {
         "endpoints": ["/api/copilot/query", "/api/admin/users"],
         "tools": [
             "get_metric_trend",
-            "get_churn_rate",
+            "get_metric_value",
             "compare_segments",
             "get_top_customers",
             "list_active_alerts",

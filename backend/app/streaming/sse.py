@@ -9,21 +9,12 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.core.rbac import check_tool_access
+from app.orchestrator import tools as toolbox
 from app.orchestrator.orchestrator import SYSTEM_PROMPT, client
-from app.orchestrator.tools import TOOLS
-from app.validator.query_validator import execute_tool
 
 logger = structlog.get_logger()
 
 MODEL = "claude-sonnet-4-6"
-
-# Tool results that render as a chart in the UI. Everything else is returned to the model
-# but not pushed to the client as chart data.
-CHARTABLE_TOOLS = {
-    "get_metric_trend",
-    "compare_segments",
-    "get_top_customers",
-}
 
 
 def _event(payload: dict[str, Any]) -> str:
@@ -51,18 +42,24 @@ def _collect_tool_uses(final_message) -> list[Any]:
     return [block for block in content if getattr(block, "type", None) == "tool_use"]
 
 
-async def _run_tool(db: Session, tenant_id: str, name: str, tool_input: dict) -> Any:
-    # execute_tool is synchronous SQLAlchemy. Calling it directly from this async
+async def _run_tool(
+    db: Session, tenant_id: str, role: str, name: str, tool_input: dict
+) -> Any:
+    # Tool execution is synchronous SQLAlchemy. Calling it directly from this async
     # generator would block the event loop for every concurrent request, not just this
     # one. The threadpool keeps the loop free while the query runs.
-    return await run_in_threadpool(execute_tool, db, tenant_id, name, tool_input)
+    return await run_in_threadpool(
+        toolbox.execute, db, tenant_id, role, name, tool_input
+    )
 
 
 async def stream_orchestrator(
     db: Session, tenant_id: str, role: str, user_message: str
 ) -> AsyncIterator[str]:
     messages: list[dict[str, Any]] = [{"role": "user", "content": user_message}]
-    allowed_tools = [t for t in TOOLS if check_tool_access(role, t["name"])]
+    # Schemas are generated per role: the model is never shown a tool — or a metric
+    # inside a tool's enum — that this caller is not permitted to use.
+    allowed_tools = toolbox.schemas_for(role)
 
     total_input_tokens = 0
     total_output_tokens = 0
@@ -140,7 +137,9 @@ async def stream_orchestrator(
                     continue
 
                 try:
-                    result = await _run_tool(db, tenant_id, block.name, tool_input)
+                    result = await _run_tool(
+                        db, tenant_id, role, block.name, tool_input
+                    )
                 except ValueError as exc:
                     # Argument-validation failures. These messages are written by us and
                     # are safe to surface — telling the model *why* the call was rejected
@@ -184,7 +183,10 @@ async def stream_orchestrator(
                     }
                 )
 
-                if block.name in CHARTABLE_TOOLS and isinstance(result, (list, dict)):
+                # Every successful tool result is pushed to the client, not just the
+                # chartable ones: the UI shows the arguments and the returned rows under
+                # each answer so a number can be checked rather than taken on trust.
+                if isinstance(result, (list, dict)):
                     yield _event(
                         {
                             "type": "tool_result",

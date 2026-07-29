@@ -1,0 +1,38 @@
+# Building blocks for churn_rate. Both declare `supports: []`, so no query shape
+# advertises them to the model — they exist only to be composed.
+---
+name: churned_subscriptions
+label: Churned Subscriptions
+description: >
+  Count of subscriptions whose end date falls inside the period. This is the numerator
+  of churn rate — the accounts lost during the window.
+unit: count
+kind: row_count
+minimum_role: viewer
+supports: []
+
+source:
+  model: subscription
+  timestamp_column: end_date
+  entity_column: customer_id
+  filters:
+    status: canceled
+---
+name: active_subscriptions_at_start
+label: Active Subscriptions at Period Start
+description: >
+  Count of subscriptions already running on the first day of the period. This is the
+  denominator of churn rate — the population that was at risk of churning.
+unit: count
+kind: point_in_time_count
+minimum_role: viewer
+supports: []
+# The churn denominator is the population at risk when the period began, not everyone
+# who was active at any point during it.
+evaluate_at: period_start
+
+source:
+  model: subscription
+  interval_start: start_date
+  interval_end: end_date
+  entity_column: customer_id

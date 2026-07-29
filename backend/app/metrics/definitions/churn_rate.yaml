@@ -1,0 +1,14 @@
+name: churn_rate
+label: Churn Rate
+description: >
+  Logo churn: subscriptions that ended during the period, divided by the number of
+  subscriptions that were already active when the period opened. Expressed as a
+  fraction, so 0.05 means five percent.
+unit: ratio
+kind: ratio
+minimum_role: viewer
+supports: [snapshot, compare]
+
+numerator: churned_subscriptions
+denominator: active_subscriptions_at_start
+precision: 4

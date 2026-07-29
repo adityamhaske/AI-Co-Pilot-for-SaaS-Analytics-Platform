@@ -7,6 +7,50 @@ import { API_BASE_URL, initialsFor, type CurrentUser } from "@/lib/config";
 
 type ChartData = Record<string, unknown> | Array<Record<string, unknown>>;
 
+/** A point in a `get_metric_trend` series. */
+interface SeriesPoint {
+  date: string;
+  value: number;
+}
+
+/** One side of a `compare_segments` result. */
+interface SegmentValue {
+  name: string;
+  value: number;
+  customers?: number;
+}
+
+type MetricMeta = { metric?: string; label?: string; unit?: string; period?: string };
+type TrendResult = MetricMeta & { series: SeriesPoint[] };
+type CompareResult = MetricMeta & { segment_a: SegmentValue; segment_b: SegmentValue };
+type RatioTerm = { metric: string; value: number };
+type SnapshotResult = MetricMeta & {
+  value: number;
+  numerator?: RatioTerm;
+  denominator?: RatioTerm;
+};
+
+function isSeriesResult(d: ChartData): d is TrendResult {
+  return !Array.isArray(d) && Array.isArray((d as TrendResult).series);
+}
+
+function isCompareResult(d: ChartData): d is CompareResult {
+  return !Array.isArray(d) && "segment_a" in d && "segment_b" in d;
+}
+
+function isSnapshotResult(d: ChartData): d is SnapshotResult {
+  return !Array.isArray(d) && typeof (d as SnapshotResult).value === "number";
+}
+
+/** Currency metrics get a $ and thousands separators; ratios become percentages. */
+function formatValue(value: number, unit?: string): string {
+  if (unit === "currency_usd") {
+    return value.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  }
+  if (unit === "ratio") return `${(value * 100).toFixed(2)}%`;
+  return value.toLocaleString();
+}
+
 /** One tool the assistant ran, kept so every number stays traceable to its source. */
 interface ToolInvocation {
   name: string;
@@ -44,47 +88,70 @@ const ChartFrame = ({ children }: { children: React.ReactElement }) => (
   </div>
 );
 
-const ChartComponent = ({ data, toolName }: { data: ChartData; toolName: string }) => {
+const ChartComponent = ({ data }: { data: ChartData }) => {
   if (!data) return null;
 
-  if (toolName === "compare_segments" && typeof data === "object" && !Array.isArray(data)) {
-    // Shape is { segment_a: {name, value}, segment_b: {name, value} } — read the nested
-    // name/value rather than charting the raw object keys.
-    const rows = Object.values(data)
-      .filter((v): v is { name: string; value: number } =>
-        typeof v === "object" && v !== null && "name" in v && "value" in v
-      )
-      .map((v) => ({ name: v.name, value: v.value }));
-    if (rows.length === 0) return null;
+  // get_metric_trend -> { metric, label, unit, series: [{date, value}] }
+  if (isSeriesResult(data) && data.series.length > 0) {
+    const unit = data.unit;
     return (
       <ChartFrame>
-        <BarChart data={rows}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-          <XAxis dataKey="name" {...AXIS} />
-          <YAxis {...AXIS} />
-          <Tooltip {...TOOLTIP} />
-          <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "10px" }} />
-          <Bar dataKey="value" fill={FILL} radius={[4, 4, 0, 0]} />
-        </BarChart>
-      </ChartFrame>
-    );
-  }
-
-  if (Array.isArray(data) && data.length > 0 && data[0].date !== undefined) {
-    return (
-      <ChartFrame>
-        <LineChart data={data}>
+        <LineChart data={data.series}>
           <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
           <XAxis dataKey="date" {...AXIS} />
-          <YAxis {...AXIS} />
-          <Tooltip {...TOOLTIP} />
+          <YAxis {...AXIS} tickFormatter={(v) => formatValue(Number(v), unit)} width={70} />
+          <Tooltip {...TOOLTIP} formatter={(v) => formatValue(Number(v), unit)} />
           <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "10px" }} />
-          <Line type="monotone" dataKey="value" stroke={STROKE} strokeWidth={2} dot={{ r: 3, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+          <Line
+            type="monotone"
+            dataKey="value"
+            name={data.label ?? "value"}
+            stroke={STROKE}
+            strokeWidth={2}
+            dot={{ r: 3, strokeWidth: 2 }}
+            activeDot={{ r: 6 }}
+          />
         </LineChart>
       </ChartFrame>
     );
   }
 
+  // compare_segments -> { segment_a: {name, value}, segment_b: {name, value} }
+  if (isCompareResult(data)) {
+    const unit = data.unit;
+    const rows = [data.segment_a, data.segment_b].map((s) => ({ name: s.name, value: s.value }));
+    return (
+      <ChartFrame>
+        <BarChart data={rows}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+          <XAxis dataKey="name" {...AXIS} />
+          <YAxis {...AXIS} tickFormatter={(v) => formatValue(Number(v), unit)} width={70} />
+          <Tooltip {...TOOLTIP} formatter={(v) => formatValue(Number(v), unit)} />
+          <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "10px" }} />
+          <Bar dataKey="value" name={data.label ?? "value"} fill={FILL} radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ChartFrame>
+    );
+  }
+
+  // get_metric_value -> a single figure, shown with the terms behind it when it is a ratio.
+  if (isSnapshotResult(data)) {
+    const { numerator, denominator } = data;
+    return (
+      <div className="mt-3 p-4 bg-slate-950/40 rounded-xl border border-slate-800">
+        <div className="text-[10px] uppercase tracking-wider text-slate-500">{data.label ?? data.metric}</div>
+        <div className="text-2xl font-bold text-slate-100 mt-1">{formatValue(data.value, data.unit)}</div>
+        {data.period && <div className="text-[10px] text-slate-500 mt-0.5">{String(data.period).replace(/_/g, " ")}</div>}
+        {numerator && denominator && (
+          <div className="text-[10px] text-slate-500 mt-2 font-mono">
+            {numerator.value} {numerator.metric} / {denominator.value} {denominator.metric}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // get_top_customers and anything else: show the rows as-is.
   if (Array.isArray(data) && data.length > 0) {
     return (
       <div className="mt-3 p-4 bg-slate-950/60 rounded-xl border border-slate-800 overflow-auto text-xs text-slate-300 font-mono max-h-60">
@@ -120,7 +187,7 @@ const ToolTrace = ({ tool }: { tool: ToolInvocation }) => {
           <pre>{JSON.stringify(tool.data, null, 2)}</pre>
         </div>
       )}
-      {tool.data !== undefined && <ChartComponent data={tool.data} toolName={tool.name} />}
+      {tool.data !== undefined && <ChartComponent data={tool.data} />}
     </div>
   );
 };

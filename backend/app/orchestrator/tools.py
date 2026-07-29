@@ -1,54 +1,32 @@
-TOOLS = [
-    {
-        "name": "get_metric_trend",
-        "description": "Return a time series for one SaaS metric over a date range.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "metric": {
-                    "type": "string",
-                    "enum": ["mrr", "arr", "active_users", "new_signups"],
-                },
-                "start_date": {"type": "string", "format": "date"},
-                "end_date": {"type": "string", "format": "date"},
-                "granularity": {"type": "string", "enum": ["day", "week", "month"]},
-            },
-            "required": ["metric", "start_date", "end_date", "granularity"],
-        },
-    },
-    {
-        "name": "get_churn_rate",
-        "description": "Return churn rate for a given period.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "period": {
-                    "type": "string",
-                    "enum": ["last_month", "last_quarter", "last_year"],
-                }
-            },
-            "required": ["period"],
-        },
-    },
-    {
-        "name": "compare_segments",
-        "description": "Compare a metric between two customer segments. Restricted to analyst/admin roles.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "metric": {
-                    "type": "string",
-                    "enum": ["mrr", "churn_rate", "active_users"],
-                },
-                "segment_a": {"type": "string"},
-                "segment_b": {"type": "string"},
-            },
-            "required": ["metric", "segment_a", "segment_b"],
-        },
-    },
+"""The tool surface exposed to the model.
+
+Two sources feed this:
+
+* **Registry-backed tools** — ``get_metric_trend``, ``get_metric_value``,
+  ``compare_segments``. Their schemas are *generated* from the metric definitions in
+  ``app/metrics/definitions``, so the metric enum the model sees can never drift from
+  what the code can actually compute. This list used to be maintained by hand alongside
+  the SQL, which is how ``granularity`` became a documented parameter no handler read.
+* **Bespoke tools** — ``get_top_customers``, ``list_active_alerts``. These are rankings
+  and heuristics rather than metric readings, and still carry hand-written SQL.
+
+Both layers are role-filtered before the model sees them.
+"""
+
+from sqlalchemy.orm import Session
+
+from app.core.rbac import check_tool_access
+from app.metrics import queries
+from app.validator.query_validator import LEGACY_HANDLERS
+
+# Tools whose schema is hand-written because they are not a metric reading.
+LEGACY_TOOLS = [
     {
         "name": "get_top_customers",
-        "description": "List top customers by a metric. Restricted to analyst/admin roles.",
+        "description": (
+            "Rank customers by current MRR or by usage-event volume. "
+            "Returns customer names, so it is restricted to analyst and admin roles."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -60,7 +38,27 @@ TOOLS = [
     },
     {
         "name": "list_active_alerts",
-        "description": "List currently active billing/usage anomaly alerts. Admin only.",
+        "description": (
+            "List currently active billing and usage anomaly alerts. Admin only."
+        ),
         "input_schema": {"type": "object", "properties": {}},
     },
 ]
+
+
+def schemas_for(role: str) -> list[dict]:
+    """Every tool this role may use, with schemas generated where possible."""
+    tools = [
+        t for t in queries.tool_schemas(role) if check_tool_access(role, t["name"])
+    ]
+    tools.extend(t for t in LEGACY_TOOLS if check_tool_access(role, t["name"]))
+    return tools
+
+
+def execute(db: Session, tenant_id: str, role: str, name: str, kwargs: dict):
+    """Run a tool by name. Raises ValueError for an unknown or malformed call."""
+    if name in queries.HANDLERS:
+        return queries.execute(db, tenant_id, role, name, kwargs)
+    if name in LEGACY_HANDLERS:
+        return LEGACY_HANDLERS[name](db, tenant_id, kwargs)
+    raise ValueError(f"Unknown tool: {name}")

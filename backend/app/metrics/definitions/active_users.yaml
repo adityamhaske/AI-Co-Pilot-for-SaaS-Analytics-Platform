@@ -1,0 +1,15 @@
+name: active_users
+label: Active Users
+description: >
+  Number of distinct customers that generated at least one usage event during the
+  period. A customer with many events counts once.
+unit: count
+kind: distinct_count
+minimum_role: viewer
+supports: [trend, snapshot, compare]
+
+source:
+  model: usage_event
+  timestamp_column: timestamp
+  distinct_column: customer_id
+  entity_column: customer_id

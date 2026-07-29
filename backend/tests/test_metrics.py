@@ -1,322 +1,259 @@
-"""Deterministic tests for the metric handlers.
+"""Deterministic tests for the metric registry.
 
-These assert exact numbers against a hand-built fixture. The previous suite exercised
-none of this SQL, which is how ``arr`` shipped as an alias for ``mrr``, ``granularity``
-shipped as a no-op, and MRR shipped measuring new bookings instead of recurring revenue.
+These assert exact numbers against a hand-built fixture, so a change in metric semantics
+has to be made deliberately rather than discovered in production.
 """
-
-import datetime
 
 import pytest
 
-from app.db.models import Customer, Subscription, Tenant, UsageEvent
-from app.validator.query_validator import (
-    compare_segments_handler,
-    execute_tool,
-    get_metric_trend_handler,
-    get_top_customers_handler,
-)
+from app.metrics import queries, registry
+from app.metrics.queries import CompareArgs, SnapshotArgs, TrendArgs
+from app.metrics.schema import QueryShape
+from app.orchestrator import tools as toolbox
+from tests.conftest import OTHER_TENANT, TENANT
 
-TENANT = "tenant_metrics"
-OTHER_TENANT = "tenant_other"
-
-D = datetime.date
-DT = datetime.datetime
-
-
-@pytest.fixture
-def metrics_data(db_session):
-    """Two subscriptions with known lifetimes, plus a decoy in another tenant.
-
-        sub_a  mrr=100  2026-01-01 -> open ended   (active)
-        sub_b  mrr=200  2026-02-01 -> 2026-03-15   (canceled)
-
-    Expected MRR by month: Jan 100, Feb 300, Mar 300, Apr 100.
-    """
-    for tid in (TENANT, OTHER_TENANT):
-        if not db_session.query(Tenant).filter(Tenant.id == tid).first():
-            db_session.add(Tenant(id=tid, name=tid))
-
-    db_session.add_all(
-        [
-            Customer(
-                id="cust_a",
-                tenant_id=TENANT,
-                name="Alpha",
-                segment="enterprise",
-                created_at=DT(2026, 1, 5),
-            ),
-            Customer(
-                id="cust_b",
-                tenant_id=TENANT,
-                name="Beta",
-                segment="smb",
-                created_at=DT(2026, 2, 10),
-            ),
-            Subscription(
-                id="sub_a",
-                tenant_id=TENANT,
-                customer_id="cust_a",
-                mrr=100.0,
-                start_date=D(2026, 1, 1),
-                end_date=None,
-                status="active",
-            ),
-            Subscription(
-                id="sub_b",
-                tenant_id=TENANT,
-                customer_id="cust_b",
-                mrr=200.0,
-                start_date=D(2026, 2, 1),
-                end_date=D(2026, 3, 15),
-                status="canceled",
-            ),
-            # Must never appear in TENANT's results.
-            Customer(
-                id="cust_x",
-                tenant_id=OTHER_TENANT,
-                name="Xeno",
-                segment="enterprise",
-                created_at=DT(2026, 1, 5),
-            ),
-            Subscription(
-                id="sub_x",
-                tenant_id=OTHER_TENANT,
-                customer_id="cust_x",
-                mrr=9999.0,
-                start_date=D(2026, 1, 1),
-                end_date=None,
-                status="active",
-            ),
-            UsageEvent(
-                id="evt_a1",
-                tenant_id=TENANT,
-                customer_id="cust_a",
-                event_type="login",
-                timestamp=DT(2026, 1, 10),
-            ),
-            UsageEvent(
-                id="evt_a2",
-                tenant_id=TENANT,
-                customer_id="cust_a",
-                event_type="login",
-                timestamp=DT(2026, 1, 11),
-            ),
-            UsageEvent(
-                id="evt_b1",
-                tenant_id=TENANT,
-                customer_id="cust_b",
-                event_type="login",
-                timestamp=DT(2026, 2, 3),
-            ),
-            UsageEvent(
-                id="evt_x1",
-                tenant_id=OTHER_TENANT,
-                customer_id="cust_x",
-                event_type="login",
-                timestamp=DT(2026, 1, 10),
-            ),
-        ]
-    )
-    db_session.commit()
-    yield db_session
-
-    for model, ids in (
-        (UsageEvent, ["evt_a1", "evt_a2", "evt_b1", "evt_x1"]),
-        (Subscription, ["sub_a", "sub_b", "sub_x"]),
-        (Customer, ["cust_a", "cust_b", "cust_x"]),
-        (Tenant, [TENANT, OTHER_TENANT]),
-    ):
-        db_session.query(model).filter(model.id.in_(ids)).delete(
-            synchronize_session=False
-        )
-    db_session.commit()
-
-
-TREND_ARGS = {
-    "metric": "mrr",
+FULL_RANGE = {
     "start_date": "2026-01-01",
     "end_date": "2026-04-30",
     "granularity": "month",
 }
 
 
-def test_mrr_is_point_in_time_not_new_bookings(metrics_data):
-    """A subscription contributes to every month it is live, not just the month it started.
+def series(db, metric, role="viewer", **overrides):
+    args = TrendArgs(metric=metric, **{**FULL_RANGE, **overrides})
+    result = queries.trend(db, TENANT, role, args)
+    return [(p["date"], p["value"]) for p in result["series"]]
 
-    Grouping by ``start_date`` (the old behaviour) reported Jan=100, Feb=200, Mar=0,
-    Apr=0 — and dropped sub_b entirely because it filters ``status == 'active'``.
+
+# ---------------------------------------------------------------------------
+# Metric semantics
+# ---------------------------------------------------------------------------
+
+
+def test_mrr_is_measured_as_of_period_end(metrics_data):
+    """MRR is a stock measure, read at the close of each period.
+
+    sub_b cancels on 15 March, so it counts towards February's closing MRR but not
+    March's. The original implementation grouped by start_date, which measured new
+    bookings instead and reported zero for every month after a subscription began.
     """
-    rows = get_metric_trend_handler(metrics_data, TENANT, dict(TREND_ARGS))
-    assert rows == [
-        {"date": "2026-01", "value": 100.0},
-        {"date": "2026-02", "value": 300.0},
-        {"date": "2026-03", "value": 300.0},
-        {"date": "2026-04", "value": 100.0},
+    assert series(metrics_data, "mrr") == [
+        ("2026-01", 100.0),
+        ("2026-02", 300.0),
+        ("2026-03", 100.0),
+        ("2026-04", 100.0),
     ]
 
 
 def test_arr_is_twelve_times_mrr(metrics_data):
-    """``arr`` used to return the mrr series unchanged."""
-    mrr = get_metric_trend_handler(metrics_data, TENANT, dict(TREND_ARGS))
-    arr = get_metric_trend_handler(
-        metrics_data, TENANT, {**TREND_ARGS, "metric": "arr"}
-    )
-
-    assert [r["value"] for r in arr] == [r["value"] * 12 for r in mrr]
-    assert arr[0]["value"] == 1200.0
+    """arr is declared as `derived from mrr, factor 12`, so it cannot drift."""
+    mrr = series(metrics_data, "mrr")
+    arr = series(metrics_data, "arr")
+    assert [v for _, v in arr] == [v * 12 for _, v in mrr]
 
 
 def test_granularity_changes_the_buckets(metrics_data):
-    """``granularity`` was validated and advertised to the model, then ignored."""
-    daily = get_metric_trend_handler(
+    """granularity was validated, advertised to the model, and then ignored."""
+    daily = series(
         metrics_data,
-        TENANT,
-        {
-            "metric": "mrr",
-            "start_date": "2026-02-01",
-            "end_date": "2026-02-07",
-            "granularity": "day",
-        },
+        "mrr",
+        start_date="2026-02-01",
+        end_date="2026-02-05",
+        granularity="day",
     )
-    assert [r["date"] for r in daily] == [
+    assert [d for d, _ in daily] == [
         "2026-02-01",
         "2026-02-02",
         "2026-02-03",
         "2026-02-04",
         "2026-02-05",
-        "2026-02-06",
-        "2026-02-07",
     ]
-    assert all(r["value"] == 300.0 for r in daily)
+    assert all(v == 300.0 for _, v in daily)
 
-    weekly = get_metric_trend_handler(
+    weekly = series(
+        metrics_data,
+        "mrr",
+        start_date="2026-02-01",
+        end_date="2026-02-28",
+        granularity="week",
+    )
+    assert 4 <= len(weekly) <= 5
+
+
+def test_active_users_counts_distinct_customers(metrics_data):
+    rows = series(
+        metrics_data, "active_users", start_date="2026-01-01", end_date="2026-02-28"
+    )
+    # cust_a has two January events but counts once.
+    assert rows == [("2026-01", 1), ("2026-02", 1)]
+
+
+def test_new_signups_counts_by_creation_month(metrics_data):
+    rows = series(
+        metrics_data, "new_signups", start_date="2026-01-01", end_date="2026-03-31"
+    )
+    assert rows == [("2026-01", 1), ("2026-02", 1), ("2026-03", 0)]
+
+
+def test_empty_range_returns_zeros_not_a_sentinel_row(metrics_data):
+    """The old handler returned [{'date': 'no_data', 'value': 0}], which charted as data."""
+    rows = series(metrics_data, "mrr", start_date="2020-01-01", end_date="2020-02-29")
+    assert rows == [("2020-01", 0.0), ("2020-02", 0.0)]
+    assert not any(d == "no_data" for d, _ in rows)
+
+
+def test_churn_rate_reports_its_own_terms(metrics_data):
+    """A bare ratio is not checkable; the numerator and denominator make it auditable."""
+    result = queries.snapshot(
         metrics_data,
         TENANT,
-        {
-            "metric": "mrr",
-            "start_date": "2026-02-01",
-            "end_date": "2026-02-28",
-            "granularity": "week",
-        },
+        "viewer",
+        SnapshotArgs(metric="churn_rate", period="last_year"),
     )
-    assert len(weekly) < len(daily) * 2
-    assert all(len(r["date"]) == len("2026-02-02") for r in weekly)
+    assert result["numerator"]["metric"] == "churned_subscriptions"
+    assert result["denominator"]["metric"] == "active_subscriptions_at_start"
+    assert result["unit"] == "ratio"
+
+
+# ---------------------------------------------------------------------------
+# Consistency — the reason the registry exists
+# ---------------------------------------------------------------------------
+
+
+def test_compare_agrees_with_trend_on_the_same_metric(metrics_data):
+    """Segment MRR and trend MRR must reconcile.
+
+    Before the registry there were three MRR definitions in one module: a point-in-time
+    sum for trends and two `status == 'active'` variants for comparison and ranking. The
+    sum of the segments could not be tied back to the trend.
+    """
+    compare = queries.compare(
+        metrics_data,
+        TENANT,
+        "analyst",
+        CompareArgs(
+            metric="mrr", segment_a="enterprise", segment_b="smb", period="last_month"
+        ),
+    )
+    snapshot = queries.snapshot(
+        metrics_data, TENANT, "viewer", SnapshotArgs(metric="mrr", period="last_month")
+    )
+
+    total = compare["segment_a"]["value"] + compare["segment_b"]["value"]
+    assert total == snapshot["value"]
+
+
+# ---------------------------------------------------------------------------
+# Tenant isolation
+# ---------------------------------------------------------------------------
 
 
 def test_trend_is_tenant_scoped(metrics_data):
-    """The 9999.0 subscription in the other tenant must never leak in."""
-    rows = get_metric_trend_handler(metrics_data, TENANT, dict(TREND_ARGS))
-    assert all(r["value"] < 9999.0 for r in rows)
+    ours = series(metrics_data, "mrr")
+    assert all(v < 9999.0 for _, v in ours)
 
-    other = get_metric_trend_handler(metrics_data, OTHER_TENANT, dict(TREND_ARGS))
-    assert other[0]["value"] == 9999.0
+    theirs = queries.trend(
+        metrics_data, OTHER_TENANT, "viewer", TrendArgs(metric="mrr", **FULL_RANGE)
+    )
+    assert theirs["series"][0]["value"] == 9999.0
 
 
-def test_active_users_counts_distinct_customers_per_period(metrics_data):
-    rows = get_metric_trend_handler(
+def test_compare_is_tenant_scoped(metrics_data):
+    """The other tenant also has an 'enterprise' segment; it must not bleed across."""
+    result = queries.compare(
         metrics_data,
         TENANT,
-        {
-            "metric": "active_users",
-            "start_date": "2026-01-01",
-            "end_date": "2026-02-28",
-            "granularity": "month",
-        },
+        "analyst",
+        CompareArgs(
+            metric="mrr", segment_a="enterprise", segment_b="smb", period="last_month"
+        ),
     )
-    # cust_a has two January events but counts once; cust_b is the only February user.
-    assert rows == [
-        {"date": "2026-01", "value": 1},
-        {"date": "2026-02", "value": 1},
-    ]
+    assert result["segment_a"]["value"] == 100.0
+    assert result["segment_a"]["customers"] == 1
 
 
-def test_new_signups_counts_customers_by_creation_month(metrics_data):
-    rows = get_metric_trend_handler(
+def test_unknown_segment_yields_zero_not_everything(metrics_data):
+    """An empty customer list must filter to nothing, not fall through to no filter."""
+    result = queries.compare(
         metrics_data,
         TENANT,
-        {
-            "metric": "new_signups",
-            "start_date": "2026-01-01",
-            "end_date": "2026-03-31",
-            "granularity": "month",
-        },
+        "analyst",
+        CompareArgs(metric="mrr", segment_a="nonexistent", segment_b="smb"),
     )
-    assert rows == [
-        {"date": "2026-01", "value": 1},
-        {"date": "2026-02", "value": 1},
-        {"date": "2026-03", "value": 0},
-    ]
+    assert result["segment_a"] == {"name": "nonexistent", "value": 0.0, "customers": 0}
 
 
-def test_empty_range_returns_zeros_not_a_fake_row(metrics_data):
-    """The old handler returned [{'date': 'no_data', 'value': 0}], which charted as data."""
-    rows = get_metric_trend_handler(
-        metrics_data,
-        TENANT,
-        {
-            "metric": "mrr",
-            "start_date": "2020-01-01",
-            "end_date": "2020-02-29",
-            "granularity": "month",
-        },
-    )
-    assert [r["date"] for r in rows] == ["2020-01", "2020-02"]
-    assert all(r["value"] == 0.0 for r in rows)
-    assert not any(r["date"] == "no_data" for r in rows)
+# ---------------------------------------------------------------------------
+# Guards
+# ---------------------------------------------------------------------------
 
 
-def test_reversed_date_range_is_rejected(metrics_data):
-    with pytest.raises(ValueError):
-        get_metric_trend_handler(
+def test_metric_must_support_the_requested_shape(metrics_data):
+    with pytest.raises(ValueError, match="does not support trend"):
+        queries.trend(
+            metrics_data, TENANT, "viewer", TrendArgs(metric="churn_rate", **FULL_RANGE)
+        )
+
+
+def test_building_block_metrics_are_not_exposed(metrics_data):
+    """Components of churn_rate declare `supports: []` and must reach no tool."""
+    for shape in QueryShape:
+        for role in ("viewer", "analyst", "admin"):
+            names = registry.names_for(shape, role)
+            assert "churned_subscriptions" not in names
+            assert "active_subscriptions_at_start" not in names
+
+
+def test_unknown_metric_is_rejected(metrics_data):
+    with pytest.raises(ValueError, match="Unknown metric"):
+        queries.trend(
             metrics_data,
             TENANT,
-            {
-                "metric": "mrr",
-                "start_date": "2026-04-01",
-                "end_date": "2026-01-01",
-                "granularity": "month",
-            },
+            "viewer",
+            TrendArgs(metric="revenue_per_unicorn", **FULL_RANGE),
+        )
+
+
+def test_reversed_date_range_is_rejected():
+    with pytest.raises(ValueError, match="not be earlier"):
+        TrendArgs(
+            metric="mrr",
+            start_date="2026-04-01",
+            end_date="2026-01-01",
+            granularity="month",
         )
 
 
 def test_excessive_period_count_is_rejected(metrics_data):
     with pytest.raises(ValueError, match="Narrow the date range"):
-        get_metric_trend_handler(
+        series(
             metrics_data,
-            TENANT,
-            {
-                "metric": "mrr",
-                "start_date": "2000-01-01",
-                "end_date": "2026-01-01",
-                "granularity": "day",
-            },
+            "mrr",
+            start_date="2000-01-01",
+            end_date="2026-01-01",
+            granularity="day",
         )
 
 
+def test_unknown_tool_is_rejected(metrics_data):
+    with pytest.raises(ValueError, match="Unknown tool"):
+        toolbox.execute(metrics_data, TENANT, "admin", "drop_all_tables", {})
+
+
+# ---------------------------------------------------------------------------
+# Bespoke tools that still carry hand-written SQL
+# ---------------------------------------------------------------------------
+
+
 def test_top_customers_is_tenant_scoped(metrics_data):
-    rows = get_top_customers_handler(
-        metrics_data, TENANT, {"sort_by": "mrr", "limit": 10}
+    rows = toolbox.execute(
+        metrics_data,
+        TENANT,
+        "analyst",
+        "get_top_customers",
+        {"sort_by": "mrr", "limit": 10},
     )
     names = [r["name"] for r in rows]
     assert "Xeno" not in names
-    # Beta's only subscription is canceled, so it carries no *current* MRR and drops out
-    # of a "top customers by MRR" ranking entirely.
+    # Beta's only subscription is cancelled, so it carries no current MRR.
     assert names == ["Alpha"]
-    assert rows[0]["mrr"] == 100.0
-
-
-def test_compare_segments_uses_active_mrr(metrics_data):
-    result = compare_segments_handler(
-        metrics_data,
-        TENANT,
-        {"metric": "mrr", "segment_a": "enterprise", "segment_b": "smb"},
-    )
-    assert result["segment_a"] == {"name": "enterprise", "value": 100.0}
-    # sub_b is canceled, so it contributes no *current* MRR.
-    assert result["segment_b"]["value"] == 0.0
-
-
-def test_execute_tool_rejects_unknown_tool(metrics_data):
-    with pytest.raises(ValueError, match="Unknown tool"):
-        execute_tool(metrics_data, TENANT, "drop_all_tables", {})
