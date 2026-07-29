@@ -1,0 +1,23 @@
+# The build context was shipping the entire local virtualenv (~4,200 .py files) plus
+# caches and the dev SQLite database into every image layer.
+.venv/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+*.db
+*.db-journal
+
+.env
+.git/
+.gitignore
+.DS_Store
+
+tests/benchmark_results.json

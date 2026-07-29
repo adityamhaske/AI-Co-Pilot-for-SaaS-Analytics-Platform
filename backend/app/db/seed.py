@@ -1,17 +1,19 @@
 import random
 from datetime import timedelta
+
 from faker import Faker
-from app.db.session import SessionLocal, engine
+
+from app.core.security import get_password_hash
 from app.db.models import (
     Base,
-    Tenant,
-    User,
     Customer,
-    Subscription,
     Invoice,
+    Subscription,
+    Tenant,
     UsageEvent,
+    User,
 )
-from app.core.security import get_password_hash
+from app.db.session import SessionLocal, engine
 
 fake = Faker()
 

@@ -7,11 +7,12 @@ Usage:
     python -m tests.benchmark --url http://localhost:6001 --n 30
 """
 
-import asyncio
 import argparse
+import asyncio
 import json
-import time
 import statistics
+import time
+
 import httpx
 
 QUERIES = [

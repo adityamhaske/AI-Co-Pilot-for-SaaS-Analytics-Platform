@@ -1,5 +1,5 @@
-from fastapi import Depends, HTTPException, status, Request
-from typing import List
+from fastapi import Depends, HTTPException, Request, status
+
 from app.core.security import verify_token
 
 # RBAC Matrix
@@ -40,11 +40,18 @@ def get_current_user(request: Request):
 
     token = auth_header.split(" ")[1]
     try:
-        payload = verify_token(token)
+        # expected_type="access" rejects a refresh token presented as a bearer token.
+        # Without this check, a stolen refresh_token cookie could be replayed directly
+        # against every API endpoint, which is exactly what the access/refresh split in
+        # core/security.py is supposed to prevent.
+        payload = verify_token(token, expected_type="access")
     except Exception:
+        # `from None` deliberately drops the cause: the jose error text distinguishes an
+        # expired token from a bad signature from a wrong type, which is an oracle an
+        # attacker can use. The caller gets one undifferentiated 401.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
-        )
+        ) from None
 
     user_id = payload.get("sub")
     tenant_id = payload.get("tenant_id")
@@ -59,7 +66,7 @@ def get_current_user(request: Request):
 
 
 class RoleChecker:
-    def __init__(self, allowed_endpoints: List[str] = None):
+    def __init__(self, allowed_endpoints: list[str] | None = None):
         self.allowed_endpoints = allowed_endpoints or []
 
     def __call__(

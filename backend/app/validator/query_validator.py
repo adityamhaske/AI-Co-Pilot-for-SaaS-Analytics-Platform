@@ -1,10 +1,20 @@
 import datetime
 from typing import Literal
-from pydantic import BaseModel, field_validator
-from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+
 from dateutil.relativedelta import relativedelta
-from app.db.models import Customer, Subscription, Invoice, UsageEvent
+from pydantic import BaseModel, field_validator, model_validator
+from sqlalchemy import case, func, or_
+from sqlalchemy.orm import Session
+
+from app.db.models import Customer, Invoice, Subscription, UsageEvent
+
+# A trend is built from one conditional aggregate per period, so the period count is
+# bounded to keep the generated SQL sane. 400 covers a year of daily points or three
+# decades of monthly ones.
+MAX_PERIODS = 400
+
+# Months per year, used to derive ARR from MRR.
+MONTHS_PER_YEAR = 12
 
 # ---------------------------------------------------------------------------
 # Pydantic v2 argument-validation models
@@ -16,6 +26,12 @@ class GetMetricTrendArgs(BaseModel):
     start_date: datetime.date
     end_date: datetime.date
     granularity: Literal["day", "week", "month"] = "month"
+
+    @model_validator(mode="after")
+    def check_range(self) -> "GetMetricTrendArgs":
+        if self.end_date < self.start_date:
+            raise ValueError("end_date must not be earlier than start_date")
+        return self
 
 
 class GetChurnRateArgs(BaseModel):
@@ -47,84 +63,138 @@ class ListActiveAlertsArgs(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+Period = tuple[str, datetime.date, datetime.date]
+
+
+def _build_periods(
+    start: datetime.date, end: datetime.date, granularity: str
+) -> list[Period]:
+    """Split [start, end] into (label, period_start, period_end_exclusive) buckets.
+
+    Building the period spine in Python keeps the SQL free of dialect-specific date
+    functions. The previous implementation used ``strftime``, which exists only in
+    SQLite — so every trend query raised ``UndefinedFunction`` on the PostgreSQL that
+    the deployment guide recommends.
+    """
+    periods: list[Period] = []
+
+    if granularity == "month":
+        cursor = start.replace(day=1)
+        step = lambda d: d + relativedelta(months=1)  # noqa: E731
+        label = lambda d: d.strftime("%Y-%m")  # noqa: E731
+    elif granularity == "week":
+        cursor = start - datetime.timedelta(days=start.weekday())  # ISO Monday
+        step = lambda d: d + datetime.timedelta(days=7)  # noqa: E731
+        label = lambda d: d.strftime("%Y-%m-%d")  # noqa: E731
+    else:  # day
+        cursor = start
+        step = lambda d: d + datetime.timedelta(days=1)  # noqa: E731
+        label = lambda d: d.strftime("%Y-%m-%d")  # noqa: E731
+
+    while cursor <= end:
+        nxt = step(cursor)
+        periods.append((label(cursor), cursor, nxt))
+        cursor = nxt
+        if len(periods) > MAX_PERIODS:
+            raise ValueError(
+                f"That range needs more than {MAX_PERIODS} {granularity} buckets. "
+                "Narrow the date range or use a coarser granularity."
+            )
+
+    return periods
+
+
 def get_metric_trend_handler(db: Session, tenant_id: str, kwargs: dict) -> list:
     try:
         args = GetMetricTrendArgs.model_validate(kwargs)
     except Exception as e:
-        raise ValueError(f"Invalid arguments for get_metric_trend: {e}")
+        raise ValueError(f"Invalid arguments for get_metric_trend: {e}") from e
 
-    start_date = args.start_date
-    end_date = args.end_date
-    metric = args.metric
+    periods = _build_periods(args.start_date, args.end_date, args.granularity)
+    if not periods:
+        return []
 
-    if metric in ("mrr", "arr"):
-        results = (
-            db.query(
-                func.strftime("%Y-%m", Subscription.start_date).label("month"),
-                func.sum(Subscription.mrr).label("value"),
-            )
-            .filter(
-                Subscription.tenant_id == tenant_id,
-                Subscription.status == "active",
-                Subscription.start_date >= start_date,
-                Subscription.start_date <= end_date,
-            )
-            .group_by("month")
-            .order_by("month")
-            .limit(36)
-            .all()
-        )
-        rows = [{"date": r.month, "value": round(float(r.value), 2)} for r in results]
+    if args.metric in ("mrr", "arr"):
+        # MRR is a point-in-time measure: every subscription that is live during a period
+        # contributes its full MRR to that period. The previous query grouped by
+        # start_date, which measured *new* MRR booked in each month and dropped a
+        # subscription from every period after the one it started in.
+        columns = [
+            func.coalesce(
+                func.sum(
+                    case(
+                        (
+                            (Subscription.start_date < period_end)
+                            & (
+                                or_(
+                                    Subscription.end_date.is_(None),
+                                    Subscription.end_date >= period_start,
+                                )
+                            ),
+                            Subscription.mrr,
+                        ),
+                        else_=0.0,
+                    )
+                ),
+                0.0,
+            ).label(f"p{i}")
+            for i, (_, period_start, period_end) in enumerate(periods)
+        ]
+        row = db.query(*columns).filter(Subscription.tenant_id == tenant_id).one()
 
-    elif metric == "active_users":
-        results = (
-            db.query(
-                func.strftime("%Y-%m", UsageEvent.timestamp).label("month"),
-                func.count(func.distinct(UsageEvent.customer_id)).label("value"),
-            )
-            .filter(
-                UsageEvent.tenant_id == tenant_id,
-                UsageEvent.timestamp >= start_date,
-                UsageEvent.timestamp <= end_date,
-            )
-            .group_by("month")
-            .order_by("month")
-            .limit(36)
-            .all()
-        )
-        rows = [{"date": r.month, "value": int(r.value)} for r in results]
+        # ARR is annualised MRR. It used to return the MRR series unchanged.
+        multiplier = MONTHS_PER_YEAR if args.metric == "arr" else 1
+        return [
+            {"date": label, "value": round(float(row[i] or 0.0) * multiplier, 2)}
+            for i, (label, _, _) in enumerate(periods)
+        ]
 
-    elif metric == "new_signups":
-        results = (
-            db.query(
-                func.strftime("%Y-%m", Customer.created_at).label("month"),
-                func.count(Customer.id).label("value"),
-            )
-            .filter(
-                Customer.tenant_id == tenant_id,
-                Customer.created_at >= start_date,
-                Customer.created_at <= end_date,
-            )
-            .group_by("month")
-            .order_by("month")
-            .limit(36)
-            .all()
-        )
-        rows = [{"date": r.month, "value": int(r.value)} for r in results]
+    if args.metric == "active_users":
+        columns = [
+            func.count(
+                func.distinct(
+                    case(
+                        (
+                            (UsageEvent.timestamp >= period_start)
+                            & (UsageEvent.timestamp < period_end),
+                            UsageEvent.customer_id,
+                        ),
+                    )
+                )
+            ).label(f"p{i}")
+            for i, (_, period_start, period_end) in enumerate(periods)
+        ]
+        row = db.query(*columns).filter(UsageEvent.tenant_id == tenant_id).one()
+        return [
+            {"date": label, "value": int(row[i] or 0)}
+            for i, (label, _, _) in enumerate(periods)
+        ]
 
-    else:
-        rows = []
-
-    if not rows:
-        return [{"date": "no_data", "value": 0}]
-    return rows
+    # new_signups
+    columns = [
+        func.count(
+            case(
+                (
+                    (Customer.created_at >= period_start)
+                    & (Customer.created_at < period_end),
+                    Customer.id,
+                ),
+            )
+        ).label(f"p{i}")
+        for i, (_, period_start, period_end) in enumerate(periods)
+    ]
+    row = db.query(*columns).filter(Customer.tenant_id == tenant_id).one()
+    return [
+        {"date": label, "value": int(row[i] or 0)}
+        for i, (label, _, _) in enumerate(periods)
+    ]
 
 
 def get_churn_rate_handler(db: Session, tenant_id: str, kwargs: dict) -> dict:
     try:
         args = GetChurnRateArgs.model_validate(kwargs)
     except Exception as e:
-        raise ValueError(f"Invalid arguments for get_churn_rate: {e}")
+        raise ValueError(f"Invalid arguments for get_churn_rate: {e}") from e
 
     today = datetime.date.today()
     if args.period == "last_month":
@@ -246,7 +316,7 @@ def compare_segments_handler(db: Session, tenant_id: str, kwargs: dict) -> dict:
     try:
         args = CompareSegmentsArgs.model_validate(kwargs)
     except Exception as e:
-        raise ValueError(f"Invalid arguments for compare_segments: {e}")
+        raise ValueError(f"Invalid arguments for compare_segments: {e}") from e
 
     def get_ids(segment_label: str) -> list:
         rows = (
@@ -279,7 +349,7 @@ def get_top_customers_handler(db: Session, tenant_id: str, kwargs: dict) -> list
     try:
         args = GetTopCustomersArgs.model_validate(kwargs)
     except Exception as e:
-        raise ValueError(f"Invalid arguments for get_top_customers: {e}")
+        raise ValueError(f"Invalid arguments for get_top_customers: {e}") from e
 
     limit = args.limit  # already clamped 1-25 by field_validator
 
@@ -345,7 +415,7 @@ def list_active_alerts_handler(db: Session, tenant_id: str, kwargs: dict) -> lis
     try:
         ListActiveAlertsArgs.model_validate(kwargs)
     except Exception as e:
-        raise ValueError(f"Invalid arguments for list_active_alerts: {e}")
+        raise ValueError(f"Invalid arguments for list_active_alerts: {e}") from e
 
     alerts = []
     today = datetime.date.today()
@@ -360,6 +430,10 @@ def list_active_alerts_handler(db: Session, tenant_id: str, kwargs: dict) -> lis
         )
         .join(UsageEvent, UsageEvent.customer_id == Customer.id)
         .filter(
+            # Both sides are scoped to the tenant. Filtering only the event side relied on
+            # customer IDs never colliding across tenants — true today, but the kind of
+            # implicit assumption that turns into a cross-tenant leak after a schema change.
+            Customer.tenant_id == tenant_id,
             UsageEvent.tenant_id == tenant_id,
             UsageEvent.timestamp >= seven_days_ago,
         )

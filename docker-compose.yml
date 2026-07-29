@@ -18,7 +18,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "5173:5173"
+      # Must match vite.config.ts server.port and the backend's CORS_ORIGINS.
+      - "6002:6002"
     environment:
       - VITE_API_BASE_URL=http://localhost:6001
     volumes:

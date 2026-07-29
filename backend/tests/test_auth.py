@@ -1,4 +1,5 @@
 from datetime import timedelta
+
 from app.core.security import create_access_token
 
 
@@ -61,4 +62,23 @@ def test_refresh_tampered_token(client):
     response = client.post(
         "/api/auth/refresh", cookies={"refresh_token": tampered_token}
     )
+    assert response.status_code == 401
+
+
+def test_me_returns_real_identity(client, test_user):
+    login_resp = client.post(
+        "/api/auth/login", json={"email": "test@test.com", "password": "password123"}
+    )
+    token = login_resp.json()["access_token"]
+
+    response = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["email"] == "test@test.com"
+    assert data["role"] == "viewer"
+    assert data["tenant_id"] == "tenant_test"
+
+
+def test_me_rejects_missing_token(client):
+    response = client.get("/api/auth/me")
     assert response.status_code == 401

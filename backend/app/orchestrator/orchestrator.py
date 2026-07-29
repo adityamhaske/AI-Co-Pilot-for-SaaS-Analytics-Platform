@@ -1,4 +1,5 @@
 import anthropic
+
 from app.core.config import settings
 
 client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)

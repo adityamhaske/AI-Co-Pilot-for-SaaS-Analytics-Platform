@@ -1,12 +1,18 @@
+import os
+
+# Must be set before app.core.config.Settings() is instantiated at import time below,
+# so the fail-fast JWT_SECRET validation doesn't require a real secret in test runs.
+os.environ.setdefault("ENVIRONMENT", "test")
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.main import app
-from app.db.session import get_db, Base
-from app.db.models import User, Tenant
 from app.core.security import get_password_hash
+from app.db.models import Tenant, User
+from app.db.session import Base, get_db
+from app.main import app
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test_override.db"
 

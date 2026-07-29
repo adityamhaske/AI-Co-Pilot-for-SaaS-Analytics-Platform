@@ -1,7 +1,8 @@
-from fastapi import FastAPI, Depends
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
+
 from app.core.rbac import RoleChecker, check_tool_access
-from app.core.security import create_access_token
+from app.core.security import create_access_token, create_refresh_token
 
 app = FastAPI()
 
@@ -70,5 +71,20 @@ def test_admin_access():
 
 def test_invalid_token():
     headers = {"Authorization": "Bearer invalid"}
+    resp = client.get("/api/copilot/query", headers=headers)
+    assert resp.status_code == 401
+
+
+def test_refresh_token_rejected_as_bearer_token():
+    """A stolen refresh_token cookie must not work as an API bearer token.
+
+    Regression test: get_current_user used to call verify_token() without
+    expected_type="access", so a refresh token — mintable with a 7-day lifetime and
+    handed to the browser as an httpOnly cookie — could be replayed directly against
+    every API endpoint, defeating the access/refresh split entirely.
+    """
+    token = create_refresh_token("user1", "tenant1", "viewer")
+    headers = {"Authorization": f"Bearer {token}"}
+
     resp = client.get("/api/copilot/query", headers=headers)
     assert resp.status_code == 401
