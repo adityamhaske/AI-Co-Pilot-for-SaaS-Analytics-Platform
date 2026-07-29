@@ -1,76 +1,83 @@
-import tailwindcssAnimate from "tailwindcss-animate"
+import tailwindcssAnimate from "tailwindcss-animate";
 
-/** @type {import('tailwindcss').Config} */
+/**
+ * Tailwind maps semantic token names onto the CSS custom properties in index.css.
+ * Components write `bg-surface` and `text-ink`, never `bg-slate-900` — so retheming
+ * touches one file and dark mode is not a per-component concern.
+ *
+ * @type {import('tailwindcss').Config}
+ */
 export default {
-  darkMode: ["class"],
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
+  darkMode: ["class", '[data-theme="dark"]'],
+  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
-    container: {
-      center: true,
-      padding: "2rem",
-      screens: {
-        "2xl": "1400px",
-      },
-    },
     extend: {
       colors: {
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
-        primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
+        surface: {
+          DEFAULT: "rgb(var(--surface) / <alpha-value>)",
+          sunken: "rgb(var(--surface-sunken) / <alpha-value>)",
+          raised: "rgb(var(--surface-raised) / <alpha-value>)",
+          hover: "rgb(var(--surface-hover) / <alpha-value>)",
+          active: "rgb(var(--surface-active) / <alpha-value>)",
         },
-        secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
+        ink: {
+          DEFAULT: "rgb(var(--ink) / <alpha-value>)",
+          secondary: "rgb(var(--ink-secondary) / <alpha-value>)",
+          muted: "rgb(var(--ink-muted) / <alpha-value>)",
+          inverse: "rgb(var(--ink-inverse) / <alpha-value>)",
         },
-        destructive: {
-          DEFAULT: "hsl(var(--destructive))",
-          foreground: "hsl(var(--destructive-foreground))",
-        },
-        muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
+        line: {
+          DEFAULT: "rgb(var(--line) / <alpha-value>)",
+          strong: "rgb(var(--line-strong) / <alpha-value>)",
         },
         accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
+          DEFAULT: "rgb(var(--accent) / <alpha-value>)",
+          hover: "rgb(var(--accent-hover) / <alpha-value>)",
+          subtle: "rgb(var(--accent-subtle) / <alpha-value>)",
+          ink: "rgb(var(--accent-ink) / <alpha-value>)",
         },
-        popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
+        danger: {
+          DEFAULT: "rgb(var(--danger) / <alpha-value>)",
+          subtle: "rgb(var(--danger-subtle) / <alpha-value>)",
         },
-        card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
+        success: "rgb(var(--success) / <alpha-value>)",
+        warning: "rgb(var(--warning) / <alpha-value>)",
+        series: {
+          1: "rgb(var(--series-1) / <alpha-value>)",
+          2: "rgb(var(--series-2) / <alpha-value>)",
         },
       },
       borderRadius: {
         lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        md: "calc(var(--radius) - 4px)",
+        sm: "calc(var(--radius) - 6px)",
+      },
+      fontSize: {
+        // A restrained scale. A size outside it signals the hierarchy is wrong.
+        "2xs": ["0.6875rem", { lineHeight: "1rem", letterSpacing: "0.02em" }],
+        xs: ["0.75rem", { lineHeight: "1.125rem" }],
+        sm: ["0.8125rem", { lineHeight: "1.25rem" }],
+        base: ["0.875rem", { lineHeight: "1.5rem" }],
+        md: ["0.9375rem", { lineHeight: "1.625rem" }],
+        lg: ["1.0625rem", { lineHeight: "1.75rem" }],
+        xl: ["1.375rem", { lineHeight: "1.875rem", letterSpacing: "-0.01em" }],
+        "2xl": ["1.75rem", { lineHeight: "2.25rem", letterSpacing: "-0.02em" }],
+      },
+      boxShadow: {
+        // Depth comes from surface steps; shadows stay subtle.
+        raised: "0 1px 2px 0 rgb(0 0 0 / 0.06), 0 1px 3px 1px rgb(0 0 0 / 0.04)",
+        overlay: "0 4px 8px 3px rgb(0 0 0 / 0.08), 0 1px 3px rgb(0 0 0 / 0.10)",
       },
       keyframes: {
-        "accordion-down": {
-          from: { height: "0" },
-          to: { height: "var(--radix-accordion-content-height)" },
-        },
-        "accordion-up": {
-          from: { height: "var(--radix-accordion-content-height)" },
-          to: { height: "0" },
+        "fade-in-up": {
+          from: { opacity: "0", transform: "translateY(4px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
         },
       },
       animation: {
-        "accordion-down": "accordion-down 0.2s ease-out",
-        "accordion-up": "accordion-up 0.2s ease-out",
+        "fade-in-up": "fade-in-up 180ms ease-out",
       },
     },
   },
   plugins: [tailwindcssAnimate],
-}
+};

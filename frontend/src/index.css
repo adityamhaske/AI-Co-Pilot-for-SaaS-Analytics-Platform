@@ -2,45 +2,209 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens.
+ *
+ * Semantic names, not raw colours: components reference `surface`, `ink`, `line`,
+ * never a hex or a Tailwind grey. Retheming happens here and nowhere else.
+ *
+ * Both themes are chosen, not derived. Dark mode is a separate set of steps picked
+ * against the dark surface — flipping lightness produces muddy, low-contrast colour.
+ *
+ * The two chart series are slots 1 and 2 of a validated categorical palette, checked
+ * for colour-vision-deficiency separation and contrast against both surfaces. Adding a
+ * third series means re-validating, not picking a hue that looks nice.
+ */
+
 @layer base {
   :root {
-    --background: 60 20% 98%; /* #FAFAF8 */
-    --foreground: 215 14% 15%; /* #1F2328 */
+    color-scheme: light;
 
-    --card: 0 0% 100%;
-    --card-foreground: 215 14% 15%;
+    /* Surfaces, furthest back to closest to the reader. */
+    --surface-sunken: 248 249 250;
+    --surface: 255 255 255;
+    --surface-raised: 255 255 255;
+    --surface-hover: 241 243 244;
+    --surface-active: 232 234 237;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 215 14% 15%;
+    /* Ink. */
+    --ink: 31 31 31;
+    --ink-secondary: 68 71 70;
+    --ink-muted: 95 99 104;
+    --ink-inverse: 255 255 255;
 
-    --primary: 221 83% 53%; /* Accent color */
-    --primary-foreground: 210 40% 98%;
+    /* Lines and edges. */
+    --line: 218 220 224;
+    --line-strong: 189 193 198;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* Interactive accent. */
+    --accent: 11 87 208;
+    --accent-hover: 8 66 160;
+    --accent-subtle: 232 240 254;
+    --accent-ink: 255 255 255;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* Status. Reserved — never reused as a chart series colour. */
+    --danger: 179 38 30;
+    --danger-subtle: 252 238 238;
+    --success: 20 108 46;
+    --warning: 158 106 3;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    /* Chart series. */
+    --series-1: 42 120 214;
+    --series-2: 235 104 52;
+    --chart-grid: 232 234 237;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --radius: 0.75rem;
+  }
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221 83% 53%;
+  :root[data-theme="dark"] {
+    color-scheme: dark;
 
-    --radius: 0.5rem;
+    --surface-sunken: 19 19 22;
+    --surface: 27 27 31;
+    --surface-raised: 38 38 42;
+    --surface-hover: 46 46 51;
+    --surface-active: 55 55 61;
+
+    --ink: 227 227 227;
+    --ink-secondary: 199 199 199;
+    --ink-muted: 142 145 143;
+    --ink-inverse: 27 27 31;
+
+    --line: 68 71 70;
+    --line-strong: 94 97 96;
+
+    --accent: 168 199 250;
+    --accent-hover: 195 217 253;
+    --accent-subtle: 11 42 84;
+    --accent-ink: 6 34 74;
+
+    --danger: 242 184 181;
+    --danger-subtle: 62 26 24;
+    --success: 109 219 141;
+    --warning: 249 191 90;
+
+    --series-1: 57 135 229;
+    --series-2: 217 89 38;
+    --chart-grid: 60 60 66;
+  }
+
+  /* The OS preference applies unless the viewer has explicitly chosen light. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+
+      --surface-sunken: 19 19 22;
+      --surface: 27 27 31;
+      --surface-raised: 38 38 42;
+      --surface-hover: 46 46 51;
+      --surface-active: 55 55 61;
+
+      --ink: 227 227 227;
+      --ink-secondary: 199 199 199;
+      --ink-muted: 142 145 143;
+      --ink-inverse: 27 27 31;
+
+      --line: 68 71 70;
+      --line-strong: 94 97 96;
+
+      --accent: 168 199 250;
+      --accent-hover: 195 217 253;
+      --accent-subtle: 11 42 84;
+      --accent-ink: 6 34 74;
+
+      --danger: 242 184 181;
+      --danger-subtle: 62 26 24;
+      --success: 109 219 141;
+      --warning: 249 191 90;
+
+      --series-1: 57 135 229;
+      --series-2: 217 89 38;
+      --chart-grid: 60 60 66;
+    }
+  }
+
+  * {
+    border-color: rgb(var(--line));
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: rgb(var(--surface-sunken));
+    color: rgb(var(--ink));
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+      "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* One consistent focus treatment. Never removed without a replacement. */
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background-color: rgb(var(--accent-subtle));
   }
 }
 
-@layer base {
-  * {
-    @apply border-border;
+@layer components {
+  /* Scrollbars that recede until the region is hovered. */
+  .scroll-region {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
   }
-  body {
-    @apply bg-background text-foreground font-sans;
+  .scroll-region:hover {
+    scrollbar-color: rgb(var(--line-strong)) transparent;
+  }
+  .scroll-region::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scroll-region::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 4px;
+  }
+  .scroll-region:hover::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--line-strong));
+  }
+
+  /* Caret on the in-flight assistant message. */
+  .streaming-caret::after {
+    content: "";
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    background-color: rgb(var(--accent));
+    animation: caret-blink 1s step-end infinite;
+  }
+
+  @keyframes caret-blink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
