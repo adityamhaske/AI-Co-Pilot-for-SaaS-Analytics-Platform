@@ -1,27 +1,72 @@
-version: '3.8'
+# Production-shaped stack: real servers, Postgres rather than SQLite, migrations run
+# before the API accepts traffic.
+#
+#   cp backend/.env.example backend/.env   # then fill in ANTHROPIC_API_KEY and JWT_SECRET
+#   docker compose up --build
+#   open http://localhost:8080
+#
+# The obsolete top-level `version:` key is deliberately absent; Compose v2 warns on it.
 
 services:
-  backend:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: copilot
+      POSTGRES_PASSWORD: copilot
+      POSTGRES_DB: copilot
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # The API must not start against a database that is still initialising.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U copilot -d copilot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Migrations run as their own one-shot service. Running them from the API's entrypoint
+  # means every worker races to migrate on startup.
+  migrate:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+    command: alembic upgrade head
+    env_file: ./backend/.env
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql+psycopg://copilot:copilot@db:5432/copilot
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: ./backend
     ports:
       - "6001:6001"
-    env_file:
-      - ./backend/.env
-    volumes:
-      - ./backend:/app
-      - /app/.venv
-      
-  frontend:
+    env_file: ./backend/.env
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql+psycopg://copilot:copilot@db:5432/copilot
+      # Must list the origin the browser actually loads the app from.
+      CORS_ORIGINS: '["http://localhost:8080"]'
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  web:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
+      args:
+        # Inlined at build time, so changing this needs a rebuild, not a restart.
+        VITE_API_BASE_URL: http://localhost:6001
     ports:
-      # Must match vite.config.ts server.port and the backend's CORS_ORIGINS.
-      - "6002:6002"
-    environment:
-      - VITE_API_BASE_URL=http://localhost:6001
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      - "8080:8080"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:

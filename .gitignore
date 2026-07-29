@@ -4,7 +4,11 @@ __pycache__/
 *$py.class
 
 # Environments
+# `.env.*` matters as much as `.env`: a file like `.env.demo` or `.env.local` holds a
+# real secret and was previously not covered.
 .env
+.env.*
+!.env.example
 .venv
 env/
 venv/

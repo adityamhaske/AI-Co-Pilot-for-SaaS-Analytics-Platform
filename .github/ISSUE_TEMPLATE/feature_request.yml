@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest a capability
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve
+      description: The situation you are stuck in, not the solution you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+    validations:
+      required: true
+  - type: checkboxes
+    id: metric
+    attributes:
+      label: Is this a new metric?
+      options:
+        - label: >
+            Yes — and I have read docs/ADDING_A_METRIC.md, which may mean this is a YAML
+            file rather than a feature request.

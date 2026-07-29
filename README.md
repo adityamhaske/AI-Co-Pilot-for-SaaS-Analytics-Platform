@@ -20,6 +20,10 @@ tools, and the metrics inside them, that the caller's role permits) and again at
 execution — and every query is scoped to the caller's tenant, taken from the verified
 JWT and never from model output.
 
+Answers carry their provenance: each figure shows the tool that produced it, the
+arguments it was called with, and the rows it returned. Conversations persist, so
+follow-up questions resolve against what was already asked.
+
 ## Status — read this first
 
 This is a **working demonstration, not a product.** Being concrete about what that means:
@@ -66,7 +70,8 @@ Browser ──► POST /api/copilot/query  (Bearer access token)
 | Streaming | Server-Sent Events, hand-rolled over FastAPI's `StreamingResponse` |
 | Auth | JWT via `python-jose`; bcrypt password hashing |
 | Database | SQLite locally, PostgreSQL for deployment (`DATABASE_URL`) |
-| Rate limiting | slowapi |
+| Rate limiting | slowapi, plus a per-user daily cost ceiling metered from token usage |
+| Serving | gunicorn + uvicorn workers; nginx for the static bundle |
 | CI | GitHub Actions |
 
 ## Getting started
@@ -75,12 +80,18 @@ Browser ──► POST /api/copilot/query  (Bearer access token)
 
 ### Docker
 
+The Compose stack is production-shaped: Postgres, migrations as a one-shot service, the
+API under gunicorn, and the frontend built and served by nginx.
+
 ```bash
 cp backend/.env.example backend/.env   # then set ANTHROPIC_API_KEY and JWT_SECRET
-docker-compose up --build
+docker compose up --build
 ```
 
-Open <http://localhost:6002>. Log in with `admin@test.com` / `password123`.
+Open <http://localhost:8080>. Log in with `admin@test.com` / `password123`.
+
+Seeded roles are `admin@test.com`, `analyst@test.com` and `viewer@test.com` (same
+password) — worth trying more than one, since the available tools change with the role.
 
 ### Manual
 
@@ -142,13 +153,15 @@ verified on every commit without a key. See [`backend/evals/README.md`](backend/
 | File | What's in it |
 |---|---|
 | `OVERHAUL_PLAN.md` | Engineering review: what's broken, what it would take to make this real |
-| `docs/ADDING_A_METRIC.md` | The metric definition format, and why metrics are declared rather than coded |
-| `docs/ARCHITECTURE.md` | System design and request lifecycle |
-| `docs/API_REFERENCE.md` | Endpoints, the SSE event contract, tool schemas |
-| `docs/SECURITY.md` | Token design, RBAC matrix, injection defences and their limits |
+| `docs/architecture/metric-registry.md` | The metric definition format, and why metrics are declared rather than coded |
+| `docs/architecture/overview.md` | System design and request lifecycle |
+| `docs/reference/api.md` | Endpoints, the SSE event contract, tool schemas |
+| `SECURITY.md` | Reporting a vulnerability, and known limitations |
+| `docs/security/design.md` | Token design, RBAC matrix, injection defences and their limits |
 | `backend/evals/README.md` | What the evals measure and how to add a case |
-| `docs/CONTRIBUTING.md` | Local dev workflow and conventions |
-| `docs/DEPLOYMENT.md` | Deployment notes |
+| `CONTRIBUTING.md` | Local dev workflow and what review asks about |
+| `CHANGELOG.md` | What changed and why |
+| `docs/guides/deployment.md` | Deployment notes |
 
 ## License
 
