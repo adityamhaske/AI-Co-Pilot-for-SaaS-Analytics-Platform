@@ -31,6 +31,22 @@ def setup_db():
     Base.metadata.drop_all(bind=engine)
 
 
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """Clear rate-limit counters between tests.
+
+    Every test shares one TestClient source address, so without this the 5/minute login
+    limit leaks across tests and whichever ones happen to run later fail. Tests that
+    deliberately exercise rate limiting still can — they just start from a clean slate.
+    """
+    from app.core.limiter import limiter
+
+    storage = getattr(limiter, "_storage", None)
+    if storage is not None and hasattr(storage, "reset"):
+        storage.reset()
+    yield
+
+
 @pytest.fixture
 def db_session():
     db = TestingSessionLocal()

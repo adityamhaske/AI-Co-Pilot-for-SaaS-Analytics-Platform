@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core import tokens as token_store
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.rbac import get_current_user
@@ -50,14 +51,34 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
     )
 
 
-def _issue(user: User, response: Response) -> TokenResponse:
+def _issue(
+    db: Session,
+    user: User,
+    response: Response,
+    rotating_from: str | None = None,
+) -> TokenResponse:
+    """Mint an access/refresh pair and record the refresh token so it can be revoked.
+
+    When rotating, the presented token is consumed atomically with the new one being
+    stored; a failure there means the presented token was stolen or replayed.
+    """
     access = create_access_token(
         subject=user.id, tenant_id=user.tenant_id, role=user.role
     )
     refresh = create_refresh_token(
         subject=user.id, tenant_id=user.tenant_id, role=user.role
     )
-    _set_refresh_cookie(response, refresh)
+
+    if rotating_from:
+        if not token_store.rotate(db, rotating_from, refresh, user.id):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token",
+            )
+    else:
+        token_store.store(db, refresh, user.id, user.tenant_id)
+
+    _set_refresh_cookie(response, refresh.token)
     return TokenResponse(
         access_token=access,
         token_type="bearer",  # noqa: S106 — OAuth scheme name, not a credential
@@ -88,7 +109,7 @@ def login(
         )
 
     logger.info("login_succeeded", user_id=user.id, tenant_id=user.tenant_id)
-    return _issue(user, response)
+    return _issue(db, user, response)
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -133,12 +154,23 @@ def refresh(request: Request, response: Response, db: Session = Depends(get_db))
         )
         raise invalid from None
 
-    # Rotate: every refresh issues a fresh refresh cookie alongside the access token.
-    return _issue(user, response)
+    # Rotate: the presented token is consumed and replaced. Presenting it a second time
+    # revokes every token this user holds.
+    return _issue(db, user, response, rotating_from=payload.get("jti"))
 
 
 @router.post("/logout")
-def logout(response: Response):
+def logout(request: Request, response: Response, db: Session = Depends(get_db)):
+    """Clear the cookie *and* revoke the token, so it cannot be replayed if captured."""
+    token = request.cookies.get(REFRESH_COOKIE)
+    if token:
+        try:
+            payload = verify_token(token, expected_type="refresh")
+        except Exception:
+            payload = None
+        if payload and payload.get("sub"):
+            token_store.revoke_all_for_user(db, payload["sub"], reason="logout")
+
     response.delete_cookie(key=REFRESH_COOKIE)
     return {"status": "logged_out"}
 

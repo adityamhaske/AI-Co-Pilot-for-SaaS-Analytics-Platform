@@ -1,6 +1,6 @@
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import structlog
@@ -54,15 +54,31 @@ async def _run_tool(
 
 
 async def stream_orchestrator(
-    db: Session, tenant_id: str, role: str, user_message: str
+    db: Session,
+    tenant_id: str,
+    role: str,
+    user_message: str,
+    history: list[dict[str, Any]] | None = None,
+    on_complete: Callable[[str, list[dict], dict], None] | None = None,
 ) -> AsyncIterator[str]:
-    messages: list[dict[str, Any]] = [{"role": "user", "content": user_message}]
+    """Stream one assistant turn.
+
+    `history` is the prior conversation, replayed so follow-up questions resolve.
+    `on_complete` receives the assembled answer, the tools that produced it, and the
+    token usage — the caller uses it to persist the turn once the stream has finished.
+    """
+    messages: list[dict[str, Any]] = [
+        *(history or []),
+        {"role": "user", "content": user_message},
+    ]
     # Schemas are generated per role: the model is never shown a tool — or a metric
     # inside a tool's enum — that this caller is not permitted to use.
     allowed_tools = toolbox.schemas_for(role)
 
     total_input_tokens = 0
     total_output_tokens = 0
+    answer_parts: list[str] = []
+    executed_tools: list[dict] = []
 
     try:
         # Bounded, unlike the previous `while True`. Without a ceiling a model that keeps
@@ -82,6 +98,7 @@ async def stream_orchestrator(
                     etype = getattr(event, "type", None)
 
                     if etype == "text":
+                        answer_parts.append(event.text)
                         yield _event({"type": "token", "text": event.text})
 
                     elif etype == "content_block_start":
@@ -187,6 +204,9 @@ async def stream_orchestrator(
                 # chartable ones: the UI shows the arguments and the returned rows under
                 # each answer so a number can be checked rather than taken on trust.
                 if isinstance(result, (list, dict)):
+                    executed_tools.append(
+                        {"name": block.name, "input": tool_input, "data": result}
+                    )
                     yield _event(
                         {
                             "type": "tool_result",
@@ -233,5 +253,20 @@ async def stream_orchestrator(
                 "output_tokens": total_output_tokens,
             }
         )
+
+    # Persist whatever the turn produced, including a partial answer after an error —
+    # losing a half-written response is worse than storing it.
+    if on_complete is not None:
+        try:
+            on_complete(
+                "".join(answer_parts),
+                executed_tools,
+                {
+                    "input_tokens": total_input_tokens,
+                    "output_tokens": total_output_tokens,
+                },
+            )
+        except Exception as exc:
+            logger.exception("persist_turn_failed", tenant_id=tenant_id, error=str(exc))
 
     yield "data: [DONE]\n\n"

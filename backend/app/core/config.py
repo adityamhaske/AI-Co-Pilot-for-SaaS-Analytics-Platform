@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     max_tokens_per_turn: int = 1024
     agent_timeout_seconds: float = 120.0
 
+    # Rolling 24-hour spend ceiling per user, in USD. Rate limiting bounds request
+    # count; this bounds actual cost.
+    daily_cost_limit_usd: float = 2.00
+
     # Token lifetimes.
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 7

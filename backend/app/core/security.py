@@ -1,4 +1,5 @@
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
@@ -42,14 +43,25 @@ def get_password_hash(password: str) -> str:
     return hashed.decode("utf-8")
 
 
+@dataclass(frozen=True)
+class IssuedToken:
+    """A minted token plus the claims a caller needs to persist it."""
+
+    token: str
+    jti: str
+    expires_at: datetime
+
+
 def _create_token(
     subject: str | Any,
     tenant_id: str,
     role: str,
     token_type: TokenType,
     expires_delta: timedelta,
-) -> str:
+) -> IssuedToken:
     now = datetime.now(UTC)
+    jti = uuid.uuid4().hex
+    expires_at = now + expires_delta
     payload = {
         "sub": str(subject),
         "tenant_id": tenant_id,
@@ -60,11 +72,12 @@ def _create_token(
         "typ": token_type,
         # `jti` gives every token a stable identity, which is the prerequisite for
         # revocation and refresh-token rotation.
-        "jti": uuid.uuid4().hex,
+        "jti": jti,
         "iat": now,
-        "exp": now + expires_delta,
+        "exp": expires_at,
     }
-    return jwt.encode(payload, settings.jwt_secret, algorithm=ALGORITHM)
+    token = jwt.encode(payload, settings.jwt_secret, algorithm=ALGORITHM)
+    return IssuedToken(token=token, jti=jti, expires_at=expires_at)
 
 
 def create_access_token(
@@ -79,7 +92,7 @@ def create_access_token(
         role,
         "access",
         expires_delta or timedelta(minutes=settings.access_token_ttl_minutes),
-    )
+    ).token
 
 
 def create_refresh_token(
@@ -87,7 +100,8 @@ def create_refresh_token(
     tenant_id: str,
     role: str,
     expires_delta: timedelta | None = None,
-) -> str:
+) -> IssuedToken:
+    """Mint a refresh token. Returns the jti so the caller can persist and revoke it."""
     return _create_token(
         subject,
         tenant_id,
