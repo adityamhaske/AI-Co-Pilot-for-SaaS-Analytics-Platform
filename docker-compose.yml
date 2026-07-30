@@ -49,6 +49,11 @@ services:
       DATABASE_URL: postgresql+psycopg://copilot:copilot@db:5432/copilot
       # Must list the origin the browser actually loads the app from.
       CORS_ORIGINS: '["http://localhost:8080"]'
+      # Row-level security is left off here on purpose. It only binds a role that does
+      # not own the tables, and this stack migrates, seeds and serves as the same
+      # `copilot` user — so enabling it would be theatre. See SECURITY.md for the
+      # two-role setup a real deployment needs.
+      ENABLE_ROW_LEVEL_SECURITY: "false"
     depends_on:
       db:
         condition: service_healthy

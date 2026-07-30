@@ -65,7 +65,7 @@ Browser ──► POST /api/copilot/query  (Bearer access token, typ=access)
               │
               ├─ auth        verify signature, expiry, token type → {user, tenant, role}
               ├─ guardrails  input screening; per-user daily cost ceiling
-              ├─ agent loop  bounded: MAX_AGENT_STEPS, token ceiling, wall clock
+              ├─ agent loop  bounded three ways: step count, wall clock, per-request
               │     │
               │     ├─► provider (Anthropic | OpenAI | Gemini), streaming
               │     │      tools = only those this role permits
@@ -179,9 +179,21 @@ python -c 'import secrets; print(secrets.token_urlsafe(48))'
 cd backend && ENVIRONMENT=test PYTHONPATH=. pytest
 ```
 
-282 tests, no API key needed. Metric arithmetic is deterministic and asserted to exact
-numbers; provider translation, tenant isolation, token revocation and the agent loop's
-bounds are all covered.
+287 backend tests plus 47 frontend tests, no API key needed. Metric arithmetic is
+deterministic and asserted to exact numbers; provider translation, tenant isolation,
+token revocation and the agent loop's bounds are all covered.
+
+```bash
+cd frontend && npm test
+```
+
+The same backend suite also runs against PostgreSQL in CI, where seven additional
+row-level-security tests become active — SQLite has no RLS, so they skip locally:
+
+```bash
+cd backend && DATABASE_URL=postgresql+psycopg://user:pass@localhost/db \
+  ENVIRONMENT=test PYTHONPATH=. pytest
+```
 
 What is *not* deterministic is whether the model picks the right tool with the right
 arguments. That is measured separately against 26 golden questions — direct and indirect

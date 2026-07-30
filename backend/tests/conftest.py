@@ -20,9 +20,7 @@ from app.main import app
 # be pointed at PostgreSQL. This matters: it was hardcoded to SQLite, which meant a CI
 # job that set DATABASE_URL to Postgres would silently keep testing SQLite and prove
 # nothing about the dialect the production database actually uses.
-SQLALCHEMY_DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "sqlite:///./test_override.db"
-)
+SQLALCHEMY_DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./test_override.db")
 
 engine = enforce_sqlite_foreign_keys(
     create_engine(

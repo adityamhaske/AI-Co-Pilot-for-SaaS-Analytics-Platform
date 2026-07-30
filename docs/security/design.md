@@ -78,3 +78,44 @@ This is the layer that makes the system safe even if every layer above it fails.
 - RBAC: each role × each tool/endpoint combination in the matrix above has an explicit test (positive and negative).
 - Injection guard: tests organized by category of manipulation attempt, not literal strings, asserting the request is flagged/blocked/logged as expected.
 - Query validator: out-of-allow-list tool name rejected; tampered tenant_id in arguments is ignored in favor of JWT tenant_id; row cap enforced; SQL injection attempt via a string argument (e.g. a metric name containing `; DROP TABLE`) is rejected by type validation before it ever reaches a query.
+
+
+## Row-level security
+
+Tenant isolation is defended twice.
+
+**Primary — application side.** `app/metrics/compiler.py` is the only path that builds a
+metric query, and `_base_filters` always applies the tenant predicate. Every metric test
+asserts scoping, and one asserts that a segment comparison sums back to its snapshot, so a
+filter that silently dropped rows would show up as arithmetic that no longer reconciles.
+
+**Secondary — PostgreSQL RLS.** Migration `b78a552ef1de` puts a policy on every
+tenant-scoped table:
+
+```sql
+tenant_id = current_setting('app.current_tenant', true)
+```
+
+`app/db/tenancy.py` declares the tenant per transaction with
+`set_config('app.current_tenant', :tenant, true)` — `set_config` rather than `SET LOCAL`
+because the latter cannot take a bind parameter, which would force the tenant id to be
+spliced into SQL. The `tenant_scoped_db` dependency applies it to every handler that knows
+the caller.
+
+Behaviour worth being precise about:
+
+| Situation | Result |
+|---|---|
+| Tenant declared | Only that tenant's rows |
+| **Tenant not declared** | **Zero rows** — fail-closed |
+| Raw SQL naming another tenant | Zero rows |
+| Connected as the table owner | Policy bypassed |
+| SQLite | No RLS; application filter only |
+
+`users` and `tenants` carry no policy on purpose: authentication has to find a user before
+it knows which tenant to scope to, so a policy there would deadlock login against itself.
+
+The owner exemption is deliberate rather than an oversight — `FORCE ROW LEVEL SECURITY`
+would break migrations, seeding, and the cross-tenant assertions that prove isolation
+works. The cost is that the deployment has to use two roles, which
+[SECURITY.md](../../SECURITY.md) states as an operator requirement.

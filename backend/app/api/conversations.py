@@ -11,9 +11,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.api.deps import tenant_scoped_db
 from app.conversations import service
 from app.core.rbac import get_current_user
-from app.api.deps import tenant_scoped_db
 
 router = APIRouter()
 

@@ -4,11 +4,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.api.deps import tenant_scoped_db
 from app.conversations import service as conversations
 from app.core import budget
 from app.core.limiter import limiter
 from app.core.rbac import RoleChecker
-from app.api.deps import tenant_scoped_db
 from app.db.session import SessionLocal
 from app.guard.injection_guard import check_prompt_injection
 from app.streaming.sse import stream_orchestrator

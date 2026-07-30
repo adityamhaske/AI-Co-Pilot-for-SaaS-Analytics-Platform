@@ -16,10 +16,10 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.api.deps import tenant_scoped_db
 from app.core.budget import spend_today
 from app.core.config import settings
 from app.core.rbac import get_current_user
-from app.api.deps import tenant_scoped_db
 from app.metrics import compiler, registry
 from app.metrics.periods import build_periods
 from app.metrics.schema import QueryShape

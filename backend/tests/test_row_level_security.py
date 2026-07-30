@@ -49,9 +49,12 @@ def rls_world():
                     "USING (tenant_id = current_setting('app.current_tenant', true))"
                 )
             )
+        # CREATE ROLE is DDL and cannot be parameterised; the name is a module constant
+        # in this file, never input. Everything that handles a *tenant* id does use a
+        # bind parameter — see app/db/tenancy.py.
         connection.execute(
             text(
-                f"DO $$ BEGIN "
+                f"DO $$ BEGIN "  # noqa: S608 - DDL with a literal constant, not input
                 f"IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='{UNPRIVILEGED_ROLE}') "
                 f"THEN CREATE ROLE {UNPRIVILEGED_ROLE}; END IF; END $$;"
             )
@@ -82,9 +85,9 @@ def rls_world():
     session.query(Subscription).filter(
         Subscription.tenant_id.in_([TENANT_A, TENANT_B])
     ).delete(synchronize_session=False)
-    session.query(Customer).filter(
-        Customer.tenant_id.in_([TENANT_A, TENANT_B])
-    ).delete(synchronize_session=False)
+    session.query(Customer).filter(Customer.tenant_id.in_([TENANT_A, TENANT_B])).delete(
+        synchronize_session=False
+    )
     session.query(Tenant).filter(Tenant.id.in_([TENANT_A, TENANT_B])).delete(
         synchronize_session=False
     )

@@ -1,5 +1,4 @@
 import pytest
-
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
@@ -115,7 +114,9 @@ def test_a_lookalike_path_does_not_inherit_permissions():
     permissions it was never granted.
     """
     token = create_access_token("user1", "tenant1", "viewer")
-    resp = client.get("/api/copilot/queryX", headers={"Authorization": f"Bearer {token}"})
+    resp = client.get(
+        "/api/copilot/queryX", headers={"Authorization": f"Bearer {token}"}
+    )
     assert resp.status_code == 403
 
 

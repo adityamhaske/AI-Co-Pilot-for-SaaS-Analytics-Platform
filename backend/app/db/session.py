@@ -19,7 +19,9 @@ def enforce_sqlite_foreign_keys(target: Engine) -> Engine:
         return target
 
     @event.listens_for(target, "connect")
-    def _set_pragma(dbapi_connection, _connection_record):  # pragma: no cover - driver hook
+    def _set_pragma(
+        dbapi_connection, _connection_record
+    ):  # pragma: no cover - driver hook
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
