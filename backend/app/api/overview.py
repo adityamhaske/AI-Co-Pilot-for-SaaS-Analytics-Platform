@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from app.core.budget import spend_today
 from app.core.config import settings
 from app.core.rbac import get_current_user
-from app.db.session import get_db
+from app.api.deps import tenant_scoped_db
 from app.metrics import compiler, registry
 from app.metrics.periods import build_periods
 from app.metrics.schema import QueryShape
@@ -68,7 +68,7 @@ def _month_starts(count: int) -> tuple[datetime.date, datetime.date]:
 @router.get("", response_model=Overview)
 def get_overview(
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(tenant_scoped_db),
 ):
     tenant_id = current_user["tenant_id"]
     role = current_user["role"]

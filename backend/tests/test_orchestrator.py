@@ -349,3 +349,42 @@ async def test_on_complete_receives_answer_tools_and_usage(db_session):
     assert "5600" in captured["answer"]
     assert [t["name"] for t in captured["tools"]] == ["get_metric_value"]
     assert captured["usage"]["input_tokens"] > 0
+
+
+@pytest.mark.asyncio
+async def test_wall_clock_deadline_stops_the_loop(db_session, monkeypatch):
+    """agent_timeout_seconds was declared and never read, while the docs claimed it.
+
+    Checked between steps, so a step already in flight completes and the answer so far is
+    preserved — a hung single request is bounded by the SDK timeout instead.
+    """
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "agent_timeout_seconds", 0.0)
+
+    provider = FakeProvider(
+        tool_turn(ToolCall("c", "get_metric_value", {"metric": "mrr"}), text="working")
+    )
+    with patch("app.orchestrator.tools.execute", return_value={"ok": True}):
+        output = await run(provider, db_session)
+
+    # One step ran, then the deadline stopped it — well short of max_agent_steps.
+    assert provider.calls == 1
+    errors = [e for e in parse_events(output) if e.get("type") == "error"]
+    assert errors and "Stopped after" in errors[0]["message"]
+    assert output[-1] == "data: [DONE]\n\n"
+
+
+@pytest.mark.asyncio
+async def test_deadline_is_not_checked_before_the_first_step(db_session, monkeypatch):
+    """A zero budget must still allow one attempt rather than answering nothing."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "agent_timeout_seconds", 0.0)
+
+    provider = FakeProvider(text_turn("Answered on the first pass."))
+    output = await run(provider, db_session)
+
+    assert provider.calls == 1
+    tokens = [e for e in parse_events(output) if e.get("type") == "token"]
+    assert tokens

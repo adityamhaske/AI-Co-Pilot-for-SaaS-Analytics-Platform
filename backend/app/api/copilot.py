@@ -8,7 +8,8 @@ from app.conversations import service as conversations
 from app.core import budget
 from app.core.limiter import limiter
 from app.core.rbac import RoleChecker
-from app.db.session import SessionLocal, get_db
+from app.api.deps import tenant_scoped_db
+from app.db.session import SessionLocal
 from app.guard.injection_guard import check_prompt_injection
 from app.streaming.sse import stream_orchestrator
 
@@ -27,8 +28,8 @@ class QueryRequest(BaseModel):
 async def copilot_query(
     request: Request,
     query_request: QueryRequest,
-    current_user: dict = Depends(RoleChecker(allowed_endpoints=["/api/copilot/query"])),
-    db: Session = Depends(get_db),
+    current_user: dict = Depends(RoleChecker()),
+    db: Session = Depends(tenant_scoped_db),
 ):
     user_id = current_user["user_id"]
     tenant_id = current_user["tenant_id"]

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.conversations import service
 from app.core.rbac import get_current_user
-from app.db.session import get_db
+from app.api.deps import tenant_scoped_db
 
 router = APIRouter()
 
@@ -56,7 +56,7 @@ _NOT_FOUND = HTTPException(
 @router.get("", response_model=list[ConversationSummary])
 def list_conversations(
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(tenant_scoped_db),
 ):
     return service.list_for_user(db, current_user["tenant_id"], current_user["user_id"])
 
@@ -65,7 +65,7 @@ def list_conversations(
 def get_conversation(
     conversation_id: str,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(tenant_scoped_db),
 ):
     conversation = service.get(
         db, current_user["tenant_id"], current_user["user_id"], conversation_id
@@ -89,7 +89,7 @@ def rename_conversation(
     conversation_id: str,
     payload: RenameRequest,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(tenant_scoped_db),
 ):
     conversation = service.rename(
         db,
@@ -112,7 +112,7 @@ def rename_conversation(
 def delete_conversation(
     conversation_id: str,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(tenant_scoped_db),
 ):
     if not service.delete(
         db, current_user["tenant_id"], current_user["user_id"], conversation_id

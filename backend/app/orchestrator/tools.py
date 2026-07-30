@@ -17,11 +17,11 @@ from sqlalchemy.orm import Session
 
 from app.core.rbac import check_tool_access
 from app.metrics import queries
+from app.orchestrator.bespoke_tools import BESPOKE_HANDLERS
 from app.providers import ToolSpec
-from app.validator.query_validator import LEGACY_HANDLERS
 
 # Tools whose schema is hand-written because they are not a metric reading.
-LEGACY_TOOLS = [
+BESPOKE_TOOLS = [
     {
         "name": "get_top_customers",
         "description": (
@@ -52,7 +52,7 @@ def schemas_for(role: str) -> list[dict]:
     tools = [
         t for t in queries.tool_schemas(role) if check_tool_access(role, t["name"])
     ]
-    tools.extend(t for t in LEGACY_TOOLS if check_tool_access(role, t["name"]))
+    tools.extend(t for t in BESPOKE_TOOLS if check_tool_access(role, t["name"]))
     return tools
 
 
@@ -76,6 +76,6 @@ def execute(db: Session, tenant_id: str, role: str, name: str, kwargs: dict):
     """Run a tool by name. Raises ValueError for an unknown or malformed call."""
     if name in queries.HANDLERS:
         return queries.execute(db, tenant_id, role, name, kwargs)
-    if name in LEGACY_HANDLERS:
-        return LEGACY_HANDLERS[name](db, tenant_id, kwargs)
+    if name in BESPOKE_HANDLERS:
+        return BESPOKE_HANDLERS[name](db, tenant_id, kwargs)
     raise ValueError(f"Unknown tool: {name}")

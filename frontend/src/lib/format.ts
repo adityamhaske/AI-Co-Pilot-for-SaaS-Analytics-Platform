@@ -55,9 +55,18 @@ export function relativeDateGroup(iso: string | null): string {
   const then = new Date(iso);
   if (Number.isNaN(then.getTime())) return "Earlier";
 
+  // Both sides are normalised to midnight, then rounded. Comparing start-of-today
+  // against the raw timestamp counted a conversation from yesterday afternoon as only
+  // half a day old, so it was filed under "Today"; rounding rather than flooring keeps
+  // it correct across a daylight-saving shift, where a "day" is 23 or 25 hours.
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
-  const days = Math.floor((startOfToday.getTime() - then.getTime()) / 86_400_000);
+  const startOfThatDay = new Date(then);
+  startOfThatDay.setHours(0, 0, 0, 0);
+
+  const days = Math.round(
+    (startOfToday.getTime() - startOfThatDay.getTime()) / 86_400_000
+  );
 
   if (days <= 0) return "Today";
   if (days === 1) return "Yesterday";

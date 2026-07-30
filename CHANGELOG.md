@@ -7,6 +7,18 @@ While the version is below 1.0.0 the API is not stable and minor versions may br
 
 ## [Unreleased]
 
+### Changed
+- **Replaced `python-jose` with `PyJWT`.** python-jose is effectively unmaintained, and
+  its willingness to sign and verify with an empty HMAC key was the mechanism behind the
+  0.1.0 token-forgery hole. PyJWT raises `InvalidKeyError` instead. The fail-fast config
+  validation stays: it catches short and placeholder secrets, which no library rejects
+  for you, and it fails at boot rather than on first login.
+- The agent loop now enforces the wall-clock bound the documentation described.
+  `agent_timeout_seconds` was declared and never read. Bounds are now explicit and
+  separate: `max_agent_steps` for a model that keeps calling tools,
+  `agent_timeout_seconds` checked between steps, and `provider_timeout_seconds` handed to
+  each SDK to bound a hung HTTP call.
+
 ### Planned
 - Postgres row-level security as a second tenant-isolation layer
 - First accuracy figure from a live eval run

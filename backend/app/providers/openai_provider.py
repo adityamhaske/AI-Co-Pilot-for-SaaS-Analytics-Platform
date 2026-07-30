@@ -3,6 +3,7 @@
 from collections.abc import AsyncIterator
 from typing import Any
 
+from app.core.config import settings
 from app.providers.anthropic_provider import parse_arguments
 from app.providers.base import (
     ChatProvider,
@@ -111,7 +112,9 @@ class OpenAIProvider(ChatProvider):
             raise ProviderError("OPENAI_API_KEY is required for LLM_PROVIDER=openai")
 
         self.model = model
-        self._client = AsyncOpenAI(api_key=api_key)
+        self._client = AsyncOpenAI(
+            api_key=api_key, timeout=settings.provider_timeout_seconds, max_retries=2
+        )
 
     async def stream_turn(
         self,

@@ -6,6 +6,7 @@ vendor SDK. Swapping Anthropic for OpenAI or Gemini is a configuration change.
 
 import asyncio
 import json
+import time
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
@@ -74,11 +75,36 @@ async def stream_orchestrator(
     answer_parts: list[str] = []
     executed_tools: list[dict] = []
 
+    # Three independent bounds on one question, because each covers a different failure:
+    #   max_agent_steps          a model that keeps asking for tools
+    #   agent_timeout_seconds    a slow-but-progressing loop (checked between steps)
+    #   provider_timeout_seconds a hung HTTP call (enforced by the SDK, see providers/)
+    #
+    # The wall clock is checked between steps rather than imposed with asyncio.timeout:
+    # this is an async generator, so when a deadline fires it is usually suspended at a
+    # yield and the cancellation lands on the consumer rather than here.
+    deadline = time.monotonic() + settings.agent_timeout_seconds
+
     try:
-        # Bounded, unlike the original `while True`. Without a ceiling a model that keeps
-        # requesting tools drives unbounded API spend and holds the connection open
-        # indefinitely, on the caller's say-so.
         for step in range(settings.max_agent_steps):
+            if step > 0 and time.monotonic() > deadline:
+                logger.warning(
+                    "agent_deadline_reached",
+                    limit_seconds=settings.agent_timeout_seconds,
+                    steps_completed=step,
+                    tenant_id=tenant_id,
+                )
+                yield _event(
+                    {
+                        "type": "error",
+                        "message": (
+                            f"Stopped after {settings.agent_timeout_seconds:.0f} seconds. "
+                            "The answer above may be incomplete."
+                        ),
+                    }
+                )
+                break
+
             finished: TurnFinished | None = None
 
             async for event in provider.stream_turn(

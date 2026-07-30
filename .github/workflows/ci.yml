@@ -12,28 +12,80 @@ jobs:
     defaults:
       run:
         working-directory: ./backend
+
+    services:
+      # The suite runs on SQLite for speed, but the migrations and the hand-written SQL
+      # in bespoke_tools.py are verified against the database production actually uses.
+      # Without this, a SQLite-only construct merges green and fails on deploy — which is
+      # exactly how `strftime` reached the trend queries.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: copilot
+          POSTGRES_PASSWORD: copilot
+          POSTGRES_DB: copilot_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
     - uses: actions/checkout@v7
+
     - name: Set up Python
       uses: actions/setup-python@v7
       with:
         python-version: '3.11'
         cache: 'pip'
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+
     - name: Lint with ruff
       run: ruff check .
+
     - name: Format with black
       run: black --check .
+
     - name: Test with pytest
       env:
         ENVIRONMENT: "test"
         ANTHROPIC_API_KEY: "test"
-        JWT_SECRET: "test"
         DATABASE_URL: "sqlite:///./test.db"
       run: PYTHONPATH=. pytest
+
+    # Migrations were never applied in CI, so drift between db/models.py and the
+    # migration history was invisible until someone deployed.
+    - name: Apply migrations to PostgreSQL
+      env:
+        ENVIRONMENT: "development"
+        JWT_SECRET: "ci-only-secret-long-enough-to-pass-validation"
+        ANTHROPIC_API_KEY: "test"
+        DATABASE_URL: "postgresql+psycopg://copilot:copilot@localhost:5432/copilot_ci"
+      run: alembic upgrade head
+
+    - name: Fail on model/migration drift
+      env:
+        ENVIRONMENT: "development"
+        JWT_SECRET: "ci-only-secret-long-enough-to-pass-validation"
+        ANTHROPIC_API_KEY: "test"
+        DATABASE_URL: "postgresql+psycopg://copilot:copilot@localhost:5432/copilot_ci"
+      # `alembic check` exits non-zero when the models imply a migration nobody wrote.
+      run: alembic check
+
+    - name: Run the tool suite against PostgreSQL
+      env:
+        ENVIRONMENT: "test"
+        ANTHROPIC_API_KEY: "test"
+        DATABASE_URL: "postgresql+psycopg://copilot:copilot@localhost:5432/copilot_ci"
+      # Only the tests that touch SQL — the point is dialect coverage, not a second full
+      # run. `-p no:randomly` keeps the shared-schema fixtures deterministic.
+      run: PYTHONPATH=. pytest tests/test_metrics.py tests/test_registry.py tests/test_evals.py -q
 
   frontend:
     runs-on: ubuntu-latest
@@ -42,19 +94,27 @@ jobs:
         working-directory: ./frontend
     steps:
     - uses: actions/checkout@v7
+
     - name: Use Node.js
       uses: actions/setup-node@v7
       with:
         node-version: '22'
         cache: 'npm'
         cache-dependency-path: ./frontend/package-lock.json
+
     - name: Install dependencies
       run: npm ci
+
     - name: Lint
       run: npm run lint
+
     # Lint alone never compiled the app, so a type error or a broken import could merge
     # green and only fail at deploy time.
     - name: Typecheck
       run: npx tsc -b --noEmit
+
+    - name: Test
+      run: npm test
+
     - name: Build
       run: npm run build

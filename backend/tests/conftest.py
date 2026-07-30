@@ -13,13 +13,27 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.security import get_password_hash
 from app.db.models import Customer, Subscription, Tenant, UsageEvent, User
-from app.db.session import Base, get_db
+from app.db.session import Base, enforce_sqlite_foreign_keys, get_db
 from app.main import app
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test_override.db"
+# The suite defaults to SQLite for speed, but honours DATABASE_URL so the same tests can
+# be pointed at PostgreSQL. This matters: it was hardcoded to SQLite, which meant a CI
+# job that set DATABASE_URL to Postgres would silently keep testing SQLite and prove
+# nothing about the dialect the production database actually uses.
+SQLALCHEMY_DATABASE_URL = os.environ.get(
+    "DATABASE_URL", "sqlite:///./test_override.db"
+)
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+engine = enforce_sqlite_foreign_keys(
+    create_engine(
+        SQLALCHEMY_DATABASE_URL,
+        # check_same_thread is a SQLite-only argument and errors on any other driver.
+        connect_args=(
+            {"check_same_thread": False}
+            if SQLALCHEMY_DATABASE_URL.startswith("sqlite")
+            else {}
+        ),
+    )
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -117,6 +131,10 @@ def metrics_data(db_session):
     for tid in (TENANT, OTHER_TENANT):
         if not db_session.query(Tenant).filter(Tenant.id == tid).first():
             db_session.add(Tenant(id=tid, name=tid))
+    # Flush the tenants before adding rows that reference them. Customer and Subscription
+    # carry a raw ForeignKey with no ORM relationship, so SQLAlchemy has no mapper-level
+    # dependency to sort on and may emit the child insert first.
+    db_session.flush()
 
     db_session.add_all(
         [

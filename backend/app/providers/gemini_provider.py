@@ -4,6 +4,7 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
+from app.core.config import settings
 from app.providers.base import (
     ChatProvider,
     ProviderError,
@@ -118,7 +119,11 @@ class GeminiProvider(ChatProvider):
             raise ProviderError("GEMINI_API_KEY is required for LLM_PROVIDER=gemini")
 
         self.model = model
-        self._client = genai.Client(api_key=api_key)
+        self._client = genai.Client(
+            api_key=api_key,
+            # google-genai takes the timeout in milliseconds.
+            http_options={"timeout": int(settings.provider_timeout_seconds * 1000)},
+        )
 
     async def stream_turn(
         self,
