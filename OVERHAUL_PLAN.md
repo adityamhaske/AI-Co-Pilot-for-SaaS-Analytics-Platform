@@ -1,5 +1,20 @@
 # Overhaul Plan — from demo to launchable
 
+> **HISTORICAL DOCUMENT.** This is the review that started the work, written against the
+> state of the repository on 2026-07-28. It is kept unedited because the reasoning is the
+> point — what was wrong, how it was found, and why each call was made. **It describes
+> problems that are now fixed, and a target state that has since been partly built and
+> partly rejected.**
+>
+> For current state read [CHANGELOG.md](CHANGELOG.md); for what is still open read the
+> "Known limitations" section of [SECURITY.md](SECURITY.md). Where this document and
+> those disagree, they are right and this is out of date.
+>
+> Two of its conclusions were revised while doing the work: MRR is measured as of period
+> end rather than by interval overlap (the standard convention for a stock measure), and
+> the full monorepo restructure in Part E was deliberately not carried out — it breaks
+> every import path for no functional gain on a project this size.
+
 **Author:** Principal-engineer review, 2026-07-28
 **Scope:** full end-to-end evaluation, target architecture, repository restructure, and roadmap to public launch.
 **Method:** every claim below was checked against the code. Empirically verified items are marked ✅.
