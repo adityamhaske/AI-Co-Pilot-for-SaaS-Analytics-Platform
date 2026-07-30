@@ -54,7 +54,7 @@ def get_current_user(request: Request):
         # core/security.py is supposed to prevent.
         payload = verify_token(token, expected_type="access")
     except Exception:
-        # `from None` deliberately drops the cause: the jose error text distinguishes an
+        # `from None` deliberately drops the cause: the PyJWT error text distinguishes an
         # expired token from a bad signature from a wrong type, which is an oracle an
         # attacker can use. The caller gets one undifferentiated 401.
         raise HTTPException(

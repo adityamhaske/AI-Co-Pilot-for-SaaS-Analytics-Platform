@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 import bcrypt
-from jose import jwt
+import jwt
 
 from app.core.config import settings
 
@@ -114,7 +114,7 @@ def create_refresh_token(
 def verify_token(token: str, expected_type: TokenType | None = None) -> dict:
     """Decode and validate a token.
 
-    Raises ``jose.JWTError`` for a bad signature or expiry, and ``ValueError`` when the
+    Raises ``jwt.PyJWTError`` for a bad signature or expiry, and ``ValueError`` when the
     token is well-formed but of the wrong kind. Callers that care about the distinction
     should catch both; callers that don't should treat either as a 401.
     """
