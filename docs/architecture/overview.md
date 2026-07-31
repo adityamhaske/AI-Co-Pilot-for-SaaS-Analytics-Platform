@@ -84,7 +84,7 @@ sequenceDiagram
 | Component | Responsibility | Key tech |
 |---|---|---|
 | React SPA | Chat interface, chart rendering, auth state, SSE consumption | React + Vite, TypeScript, Tailwind CSS, shadcn/ui, Recharts, TanStack Query |
-| Auth middleware | Verify JWT signature/expiry, attach `user_id`, `role`, `tenant_id` to request state | `python-jose` or `PyJWT`, FastAPI `Depends` |
+| Auth middleware | Verify JWT signature/expiry, attach `user_id`, `role`, `tenant_id` to request state | `PyJWT`, FastAPI `Depends` |
 | RBAC guard | Map role → allowed tool functions and endpoints; reject before any LLM call | Custom FastAPI dependency, declarative permission table |
 | Prompt-injection guard | Screen incoming text for instruction-override patterns before it reaches the model | Heuristic rule set + optional cheap Claude Haiku classification call |
 | Tool-use orchestrator | Hold the Anthropic conversation loop: send tool schemas, relay tool calls, relay results, stream final answer | Anthropic Python SDK, `anthropic.messages.stream` |

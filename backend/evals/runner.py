@@ -16,7 +16,6 @@ Exits non-zero if accuracy falls below --threshold, so CI can gate on it.
 import argparse
 import asyncio
 import json
-import os
 import statistics
 import sys
 import time
@@ -227,10 +226,24 @@ def main() -> int:
             print(f"{c['id']:<32} {c.get('category',''):<14} {c['role']}")
         return 0
 
-    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    # Provider-aware: the runner works against whichever provider LLM_PROVIDER selects,
+    # so checking only ANTHROPIC_API_KEY would refuse a perfectly good Gemini run.
+    from app.core.config import settings
+
+    key = {
+        "anthropic": settings.anthropic_api_key,
+        "openai": settings.openai_api_key,
+        "gemini": settings.gemini_api_key,
+    }[settings.llm_provider]
+
     if not key or key == "test":
+        env_name = {
+            "anthropic": "ANTHROPIC_API_KEY",
+            "openai": "OPENAI_API_KEY",
+            "gemini": "GEMINI_API_KEY (or GOOGLE_API_KEY)",
+        }[settings.llm_provider]
         print(
-            "ANTHROPIC_API_KEY is not set to a real key.\n"
+            f"{env_name} is not set to a real key, and LLM_PROVIDER={settings.llm_provider}.\n"
             "These evals measure the model's tool choice, so they need a live API call.\n"
             "Metric arithmetic is covered without an API key by tests/test_metrics.py.",
             file=sys.stderr,

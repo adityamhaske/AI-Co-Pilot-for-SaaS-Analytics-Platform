@@ -6,6 +6,7 @@ vendor SDK. Swapping Anthropic for OpenAI or Gemini is a configuration change.
 
 import asyncio
 import json
+import time
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
@@ -16,7 +17,7 @@ from starlette.concurrency import run_in_threadpool
 from app.core.config import settings
 from app.core.rbac import check_tool_access
 from app.orchestrator import tools as toolbox
-from app.orchestrator.prompts import SYSTEM_PROMPT
+from app.orchestrator.prompts import build_system_prompt
 from app.providers import (
     TextChunk,
     ToolCallStarted,
@@ -59,6 +60,8 @@ async def stream_orchestrator(
     token usage — the caller uses it to persist the turn once the stream has finished.
     """
     provider = get_provider()
+    # Rebuilt per request so the date it states stays correct in a long-lived process.
+    system_prompt = build_system_prompt()
 
     turns: list[Turn] = [
         Turn(role=t["role"], text=t["content"]) for t in (history or [])
@@ -74,15 +77,40 @@ async def stream_orchestrator(
     answer_parts: list[str] = []
     executed_tools: list[dict] = []
 
+    # Three independent bounds on one question, because each covers a different failure:
+    #   max_agent_steps          a model that keeps asking for tools
+    #   agent_timeout_seconds    a slow-but-progressing loop (checked between steps)
+    #   provider_timeout_seconds a hung HTTP call (enforced by the SDK, see providers/)
+    #
+    # The wall clock is checked between steps rather than imposed with asyncio.timeout:
+    # this is an async generator, so when a deadline fires it is usually suspended at a
+    # yield and the cancellation lands on the consumer rather than here.
+    deadline = time.monotonic() + settings.agent_timeout_seconds
+
     try:
-        # Bounded, unlike the original `while True`. Without a ceiling a model that keeps
-        # requesting tools drives unbounded API spend and holds the connection open
-        # indefinitely, on the caller's say-so.
         for step in range(settings.max_agent_steps):
+            if step > 0 and time.monotonic() > deadline:
+                logger.warning(
+                    "agent_deadline_reached",
+                    limit_seconds=settings.agent_timeout_seconds,
+                    steps_completed=step,
+                    tenant_id=tenant_id,
+                )
+                yield _event(
+                    {
+                        "type": "error",
+                        "message": (
+                            f"Stopped after {settings.agent_timeout_seconds:.0f} seconds. "
+                            "The answer above may be incomplete."
+                        ),
+                    }
+                )
+                break
+
             finished: TurnFinished | None = None
 
             async for event in provider.stream_turn(
-                system=SYSTEM_PROMPT,
+                system=system_prompt,
                 turns=turns,
                 tools=allowed_tools,
                 max_tokens=settings.max_tokens_per_turn,

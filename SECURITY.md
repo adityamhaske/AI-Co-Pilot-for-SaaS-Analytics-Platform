@@ -46,9 +46,17 @@ itself a hazard:
 - **Tool results are not sanitised.** Data from the database — a customer name, an event
   type — enters the model's context. Attacker-controlled content reaching those columns
   is an indirect injection vector. Blast radius is limited to the caller's own tenant.
-- **Tenant isolation is enforced in the application**, in `app/metrics/compiler.py`, not
-  by Postgres row-level security. A bug in the compiler is not caught by a second layer.
-  RLS is planned; see `OVERHAUL_PLAN.md`.
+- **Tenant isolation has two layers, but the second is opt-in.** The primary control is
+  application-side: `app/metrics/compiler.py` is the only path that builds a query and
+  always applies the tenant predicate. PostgreSQL row-level security is the second layer
+  and is verified in `tests/test_row_level_security.py` — including that raw SQL naming
+  another tenant returns nothing. Two caveats you should know before relying on it:
+  - It is **off unless `ENABLE_ROW_LEVEL_SECURITY=true`**, so a default deployment runs
+    on the application filter alone.
+  - PostgreSQL exempts a table's owner, so it only binds if the API connects as a role
+    that does **not** own the tables. Migrate and seed as the owner; run the API as a
+    separate role. Running the API as the owner leaves the layer inert.
+  - SQLite has no RLS at all, so local development and the fast test path never have it.
 - **No signup, so no account-recovery or email-verification surface** exists to attack.
 - **Not audited.** No penetration test or third-party review has been performed.
 
@@ -62,3 +70,9 @@ itself a hazard:
 - Serve over HTTPS. The refresh cookie is `Secure`, so it will not be sent over plain
   HTTP outside localhost.
 - Set `DAILY_COST_LIMIT_USD` for your tolerance. The default is $2 per user per day.
+- Set `ENABLE_ROW_LEVEL_SECURITY=true` and connect the API as a non-owning PostgreSQL
+  role. Verify it took effect: with RLS active, a connection that has not declared a
+  tenant reads zero rows from `customers`.
+- `PROVIDER_TIMEOUT_SECONDS` bounds a single model request and `AGENT_TIMEOUT_SECONDS`
+  bounds a whole question. Both default conservatively; lower them if you front the API
+  with a proxy that times out sooner.

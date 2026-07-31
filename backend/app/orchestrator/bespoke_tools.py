@@ -1,16 +1,20 @@
-"""Bespoke tool handlers.
+"""Tools that are not metric readings, and still carry hand-written SQL.
 
-Metric readings (trends, snapshots, segment comparisons) moved to the declarative
-registry in ``app/metrics``: one YAML definition per metric now drives the tool schema,
-the argument validation and the SQL together.
+Metric readings — trends, snapshots, segment comparisons — live in the declarative
+registry in ``app/metrics``, where one YAML definition drives the tool schema, the
+argument validation and the SQL together. What remains here is a customer ranking and a
+set of alerting heuristics: neither is "the value of a metric over a period", so neither
+fits the registry's shape.
 
-What is left here is the work that is not a metric reading — a customer ranking and a
-set of alerting heuristics. Both still carry hand-written SQL.
+This file used to be called ``app/validator/query_validator.py``, a name it had long
+outgrown — it contained no validation, only business SQL. Removing the metric handlers
+also removed three separate definitions of MRR that lived here: a point-in-time sum for
+trends, and two ``status == 'active'`` variants for segment comparison and ranking. They
+disagreed, so "MRR trend" and "compare MRR by segment" returned numbers that could not
+be reconciled.
 
-Removing the metric handlers also removed three separate definitions of MRR that lived
-in this file: a point-in-time sum for trends, and two ``status == 'active'`` variants for
-segment comparison and customer ranking. They disagreed, so "MRR trend" and "compare MRR
-by segment" returned numbers that could not be reconciled.
+Anything added here should be a candidate for the registry first. Hand-written SQL is the
+exception, not the default.
 """
 
 import datetime
@@ -176,7 +180,7 @@ def list_active_alerts_handler(db: Session, tenant_id: str, kwargs: dict) -> lis
 # ---------------------------------------------------------------------------
 
 
-LEGACY_HANDLERS = {
+BESPOKE_HANDLERS = {
     "get_top_customers": get_top_customers_handler,
     "list_active_alerts": list_active_alerts_handler,
 }

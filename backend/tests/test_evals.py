@@ -18,7 +18,7 @@ from app.metrics import queries, registry
 from app.metrics.queries import CompareArgs, SnapshotArgs
 from app.metrics.schema import QueryShape
 from app.orchestrator import tools as toolbox
-from app.validator.query_validator import LEGACY_HANDLERS
+from app.orchestrator.bespoke_tools import BESPOKE_HANDLERS
 from evals import fixtures
 from evals.graders import (
     Verdict,
@@ -31,7 +31,7 @@ from evals.graders import (
 from evals.runner import load_cases
 
 CASES = load_cases()
-KNOWN_TOOLS = set(queries.HANDLERS) | set(LEGACY_HANDLERS)
+KNOWN_TOOLS = set(queries.HANDLERS) | set(BESPOKE_HANDLERS)
 
 
 @pytest.fixture

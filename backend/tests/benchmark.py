@@ -10,6 +10,7 @@ Usage:
 import argparse
 import asyncio
 import json
+import math
 import statistics
 import time
 
@@ -72,7 +73,17 @@ async def run(url: str, n: int):
     good.sort()
 
     def pct(p: float) -> float:
-        return good[int(len(good) * p / 100)]
+        """Nearest-rank percentile.
+
+        The previous `good[int(len(good) * p / 100)]` was wrong in two ways: with n=20 it
+        returned the maximum for p95 (index 19) rather than the 95th percentile, and
+        pct(100) indexed one past the end and raised. Nearest-rank is the standard
+        definition for a latency percentile and is defined at both extremes.
+        """
+        if not good:
+            return 0.0
+        rank = max(1, math.ceil(p / 100 * len(good)))
+        return good[min(rank, len(good)) - 1]
 
     results = {
         "n": n,

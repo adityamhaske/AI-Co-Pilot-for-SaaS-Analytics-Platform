@@ -192,9 +192,9 @@ def test_every_advertised_metric_is_computable():
 
 def test_every_advertised_tool_has_a_handler():
     from app.metrics.queries import HANDLERS
-    from app.validator.query_validator import LEGACY_HANDLERS
+    from app.orchestrator.bespoke_tools import BESPOKE_HANDLERS
 
-    known = set(HANDLERS) | set(LEGACY_HANDLERS)
+    known = set(HANDLERS) | set(BESPOKE_HANDLERS)
     for role in ("viewer", "analyst", "admin"):
         for tool in toolbox.schemas_for(role):
             assert tool["name"] in known
@@ -203,9 +203,9 @@ def test_every_advertised_tool_has_a_handler():
 def test_rbac_matrix_references_only_real_tools():
     """A typo in the RBAC matrix would silently hide a tool from every role."""
     from app.metrics.queries import HANDLERS
-    from app.validator.query_validator import LEGACY_HANDLERS
+    from app.orchestrator.bespoke_tools import BESPOKE_HANDLERS
 
-    known = set(HANDLERS) | set(LEGACY_HANDLERS)
+    known = set(HANDLERS) | set(BESPOKE_HANDLERS)
     for role, permissions in ROLE_PERMISSIONS.items():
         for tool_name in permissions["tools"]:
             assert tool_name in known, f"{role} grants unknown tool {tool_name}"

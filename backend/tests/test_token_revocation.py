@@ -176,10 +176,27 @@ def test_refresh_token_carries_the_right_type(client, test_user):
 # ---------------------------------------------------------------------------
 
 
-def test_cost_estimate_uses_published_rates():
-    # 1M input + 1M output at $3 / $15.
-    assert estimate_cost(1_000_000, 1_000_000) == pytest.approx(18.0)
-    assert estimate_cost(0, 0) == 0.0
+@pytest.mark.parametrize(
+    ("provider", "expected"),
+    [("anthropic", 18.0), ("openai", 10.0), ("gemini", 11.25)],
+)
+def test_cost_estimate_prices_each_provider_separately(provider, expected):
+    """1M input + 1M output, priced from app.providers.PRICING.
+
+    The provider is passed explicitly rather than read from settings: this assertion
+    used to depend on the ambient LLM_PROVIDER, so a developer with `gemini` in their
+    .env saw it fail on rates that were perfectly correct.
+    """
+    assert estimate_cost(1_000_000, 1_000_000, provider) == pytest.approx(expected)
+    assert estimate_cost(0, 0, provider) == 0.0
+
+
+def test_cost_estimate_falls_back_for_an_unknown_provider():
+    # Unknown names price at the most expensive published rate rather than free, so a
+    # misconfiguration cannot quietly disable the budget ceiling.
+    assert estimate_cost(1_000_000, 1_000_000, "no-such-provider") == pytest.approx(
+        18.0
+    )
 
 
 def test_spend_accumulates(token_user):
@@ -191,6 +208,19 @@ def test_spend_accumulates(token_user):
     assert spend_today(token_user, USER) == pytest.approx(first * 2)
 
 
+def _output_tokens_worth(dollars: float) -> int:
+    """Output tokens that cost at least `dollars` under the *configured* provider.
+
+    Deriving the rate keeps these tests about the budget ceiling rather than about any
+    one vendor's price list.
+    """
+    from app.core.config import settings
+    from app.providers import pricing_for
+
+    _, output_rate = pricing_for(settings.llm_provider)
+    return int((dollars / output_rate) * 1_000_000) + 1
+
+
 def test_budget_blocks_once_the_ceiling_is_passed(token_user):
     from app.core.config import settings
 
@@ -198,7 +228,7 @@ def test_budget_blocks_once_the_ceiling_is_passed(token_user):
     assert allowed
 
     # Spend well past the daily limit.
-    tokens_needed = int((settings.daily_cost_limit_usd / 15.0) * 1_000_000) + 1
+    tokens_needed = _output_tokens_worth(settings.daily_cost_limit_usd)
     record(token_user, TENANT, USER, 0, tokens_needed)
 
     allowed, spent = within_budget(token_user, USER)
@@ -209,7 +239,7 @@ def test_budget_blocks_once_the_ceiling_is_passed(token_user):
 def test_budget_is_per_user(token_user):
     from app.core.config import settings
 
-    tokens_needed = int((settings.daily_cost_limit_usd / 15.0) * 1_000_000) + 1
+    tokens_needed = _output_tokens_worth(settings.daily_cost_limit_usd)
     record(token_user, TENANT, USER, 0, tokens_needed)
 
     assert not within_budget(token_user, USER)[0]

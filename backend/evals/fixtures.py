@@ -55,6 +55,10 @@ def build(db: Session, tenant_id: str = EVAL_TENANT) -> None:
     wipe(db, tenant_id)
 
     db.add(Tenant(id=tenant_id, name="Eval Tenant"))
+    # Flush the tenant before the rows that reference it. Customer and Subscription carry
+    # a raw ForeignKey with no ORM relationship, so SQLAlchemy has no mapper dependency to
+    # order the inserts by. This passed only while SQLite left foreign keys unenforced.
+    db.flush()
 
     for prefix, segment, count, mrr, end_date in COHORTS:
         for i in range(count):

@@ -1,9 +1,17 @@
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 
 import { ChevronIcon, ToolIcon } from "@/components/ui/icons";
-import { ResultChart, type ChartData } from "@/features/chart/ResultChart";
+import { Skeleton } from "@/components/ui/primitives";
+import type { ChartData } from "@/features/chart/ResultChart";
 import type { ToolInvocation } from "@/lib/api";
 import { cn } from "@/lib/utils";
+
+// Recharts and its d3 dependencies are the bulk of the bundle and are only needed once
+// an answer contains a figure. Loading them lazily keeps them off the login page and the
+// first paint; the chunk arrives while the answer is still streaming.
+const ResultChart = lazy(() =>
+  import("@/features/chart/ResultChart").then((m) => ({ default: m.ResultChart }))
+);
 
 /**
  * Provenance for an answer.
@@ -28,7 +36,11 @@ export function ToolTrace({ tool }: { tool: ToolInvocation }) {
 
   return (
     <div className="mt-3">
-      {tool.data !== undefined && <ResultChart data={tool.data as ChartData} />}
+      {tool.data !== undefined && (
+        <Suspense fallback={<Skeleton className="mt-3 h-56 w-full rounded-lg" />}>
+          <ResultChart data={tool.data as ChartData} />
+        </Suspense>
+      )}
 
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="inline-flex items-center gap-1.5 text-2xs font-medium text-ink-muted">

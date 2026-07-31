@@ -4,6 +4,7 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
+from app.core.config import settings
 from app.providers.base import (
     ChatProvider,
     ProviderError,
@@ -100,7 +101,13 @@ class AnthropicProvider(ChatProvider):
             )
 
         self.model = model
-        self._client = anthropic.AsyncAnthropic(api_key=api_key)
+        # A per-request timeout is the only thing that bounds a hung provider call.
+        # Wrapping the agent loop in asyncio.timeout cannot do this job: the loop is an
+        # async generator, so when the deadline fires it is usually suspended at a yield
+        # and the cancellation lands on the consumer instead.
+        self._client = anthropic.AsyncAnthropic(
+            api_key=api_key, timeout=settings.provider_timeout_seconds, max_retries=2
+        )
 
     async def stream_turn(
         self,

@@ -65,7 +65,7 @@ Browser ──► POST /api/copilot/query  (Bearer access token, typ=access)
               │
               ├─ auth        verify signature, expiry, token type → {user, tenant, role}
               ├─ guardrails  input screening; per-user daily cost ceiling
-              ├─ agent loop  bounded: MAX_AGENT_STEPS, token ceiling, wall clock
+              ├─ agent loop  bounded three ways: step count, wall clock, per-request
               │     │
               │     ├─► provider (Anthropic | OpenAI | Gemini), streaming
               │     │      tools = only those this role permits
@@ -96,7 +96,7 @@ LLM_MODEL=                 # blank uses the provider's default
 |---|---|---|
 | `anthropic` | `claude-sonnet-4-6` | `pip install anthropic` |
 | `openai` | `gpt-4.1` | `pip install openai` |
-| `gemini` | `gemini-2.5-pro` | `pip install google-genai` |
+| `gemini` | `gemini-flash-latest` | `pip install google-genai` |
 
 The agent loop is provider-neutral: it speaks the types in
 [`app/providers/base.py`](backend/app/providers/base.py) and never touches a vendor SDK.
@@ -121,8 +121,9 @@ This is a **working demonstration, not a product.**
 - **There is no signup.** Accounts exist only because the seed script creates them.
 - **It has not been run in production**, and the metric definitions have not been checked
   against a real accounting of revenue.
-- **No accuracy figure is published**, because the eval suite has not been run against a
-  live API. Quoting one before measuring it is exactly the claim this project avoids.
+- **The accuracy figure below is one provider, one run, 26 questions.** It is a smoke
+  test of tool selection, not a benchmark, and the sample is far too small to publish a
+  confidence interval for.
 
 [OVERHAUL_PLAN.md](OVERHAUL_PLAN.md) is a candid engineering review of what was broken and
 what it would take to make this real.
@@ -179,9 +180,23 @@ python -c 'import secrets; print(secrets.token_urlsafe(48))'
 cd backend && ENVIRONMENT=test PYTHONPATH=. pytest
 ```
 
-282 tests, no API key needed. Metric arithmetic is deterministic and asserted to exact
-numbers; provider translation, tenant isolation, token revocation and the agent loop's
-bounds are all covered.
+290 backend tests plus 47 frontend tests, no API key needed. Metric arithmetic is
+deterministic and asserted to exact numbers; provider translation, tenant isolation,
+token revocation and the agent loop's bounds are all covered. The suite passes
+identically under all three `LLM_PROVIDER` values, so a local `.env` cannot change the
+result.
+
+```bash
+cd frontend && npm test
+```
+
+The same backend suite also runs against PostgreSQL in CI, where seven additional
+row-level-security tests become active — SQLite has no RLS, so they skip locally:
+
+```bash
+cd backend && DATABASE_URL=postgresql+psycopg://user:pass@localhost/db \
+  ENVIRONMENT=test PYTHONPATH=. pytest
+```
 
 What is *not* deterministic is whether the model picks the right tool with the right
 arguments. That is measured separately against 26 golden questions — direct and indirect
@@ -191,6 +206,29 @@ probes, and prompt-injection attempts:
 ```bash
 cd backend && ANTHROPIC_API_KEY=sk-... PYTHONPATH=. python -m evals.runner
 ```
+
+Most recent run — `gemini-flash-latest`, 2026-07-30, 26/26, median latency 4.5s:
+
+| Category | | Category | |
+|---|---|---|---|
+| direct | 8/8 | indirect | 4/4 |
+| multi_tool | 2/2 | granularity | 2/2 |
+| grounding | 3/3 | rbac | 4/4 |
+| adversarial | 3/3 | | |
+
+Read that number narrowly. It is **one provider on one run against 26 questions**, on
+synthetic data whose expected values are hand-computed in
+[`evals/fixtures.py`](backend/evals/fixtures.py) — it says the tool layer and the refusal
+behaviour hold up on the cases we thought to write, and nothing about questions nobody
+tried. The first honest run scored **92.3%**; the two failures were graders that banned a
+substring appearing in a *correct* refusal, and the assertions now test for disclosure
+rather than for a word.
+
+An earlier run reported a perfect score while eight cases had produced no answer at all —
+the model called the right tool, then spent its whole step budget and emitted an error,
+which the tool grader counted as a pass. Every case is now graded for completion first. The
+cause was that the model had no idea what today's date was and was guessing years; see
+[`orchestrator/prompts.py`](backend/app/orchestrator/prompts.py).
 
 This calls a real API and costs money, so it runs nightly rather than per commit. The
 harness itself — dataset integrity and the fixture's hand-computed expected values — is

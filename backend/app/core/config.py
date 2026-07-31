@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Anything shorter than this is not a credible HMAC key for HS256.
@@ -21,10 +21,15 @@ class Settings(BaseSettings):
     """Application configuration.
 
     Validation here is deliberately fail-fast: a misconfigured deployment should refuse
-    to boot rather than start in an insecure state. The previous default of
-    ``jwt_secret = ""`` let the app run happily while signing tokens with an empty key —
-    which python-jose accepts for both signing *and* verification, meaning anyone could
-    mint an admin token for any tenant.
+    to boot rather than start in an insecure state.
+
+    The original default of ``jwt_secret = ""`` was a critical hole, because the
+    then-current python-jose signed *and* verified with an empty key — any visitor to a
+    default deployment could mint an admin token for any tenant. PyJWT rejects an empty
+    HMAC key outright, so that exact hole is now closed twice over. These checks remain
+    the right guard regardless: they turn a misconfiguration into a clear refusal at boot
+    rather than a 500 on the first login, and they also catch short and placeholder
+    secrets, which no library will reject for you.
     """
 
     environment: Literal["development", "test", "production"] = "development"
@@ -35,11 +40,26 @@ class Settings(BaseSettings):
     #: Override the provider's default model. Blank means the provider's default.
     llm_model: str = ""
 
-    anthropic_api_key: str = ""
-    openai_api_key: str = ""
-    gemini_api_key: str = ""
+    # Each key accepts the vendor's own conventional variable name as well as ours.
+    # GOOGLE_API_KEY in particular is what google-genai reads by default, so a key
+    # already exported for the Google SDK works here without being renamed.
+    anthropic_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("ANTHROPIC_API_KEY", "CLAUDE_API_KEY"),
+    )
+    openai_api_key: str = Field(
+        default="", validation_alias=AliasChoices("OPENAI_API_KEY")
+    )
+    gemini_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    )
 
-    jwt_secret: str = ""
+    # JWT_SECRET_KEY is the more common spelling in the wild; accept both rather than
+    # silently ignoring a secret someone has clearly set on purpose.
+    jwt_secret: str = Field(
+        default="", validation_alias=AliasChoices("JWT_SECRET", "JWT_SECRET_KEY")
+    )
     database_url: str = "sqlite:///./test.db"
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:6002"])
 
@@ -48,18 +68,41 @@ class Settings(BaseSettings):
     # operator's expense.
     max_agent_steps: int = 6
     max_tokens_per_turn: int = 1024
+    #: Deadline for a single provider HTTP request, passed to the SDK.
+    provider_timeout_seconds: float = 60.0
+    #: Total wall clock for one question. Checked between agent steps, so a step already
+    #: in flight finishes; the per-request timeout above bounds that step.
     agent_timeout_seconds: float = 120.0
+
+    # Row-level security in PostgreSQL, as a second layer behind the application-side
+    # tenant filter. Requires the API to connect as a role that does not own the tables,
+    # because PostgreSQL exempts the owner. Off by default so local SQLite development and
+    # the test suite are unaffected.
+    enable_row_level_security: bool = False
 
     # Rolling 24-hour spend ceiling per user, in USD. Rate limiting bounds request
     # count; this bounds actual cost.
     daily_cost_limit_usd: float = 2.00
 
     # Token lifetimes.
-    access_token_ttl_minutes: int = 15
-    refresh_token_ttl_days: int = 7
+    access_token_ttl_minutes: int = Field(
+        default=15,
+        validation_alias=AliasChoices(
+            "ACCESS_TOKEN_TTL_MINUTES", "JWT_ACCESS_TOKEN_EXPIRE_MINUTES"
+        ),
+    )
+    refresh_token_ttl_days: int = Field(
+        default=7,
+        validation_alias=AliasChoices(
+            "REFRESH_TOKEN_TTL_DAYS", "JWT_REFRESH_TOKEN_EXPIRE_DAYS"
+        ),
+    )
 
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        populate_by_name=True,
     )
 
     @property
@@ -80,11 +123,18 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_secrets(self) -> "Settings":
-        # The test environment gets a generated-quality default so the suite runs without
-        # a .env file. Development and production must supply real values.
+        # The test environment substitutes a strong deterministic secret so the suite is
+        # hermetic. It *overrides* rather than only filling a blank: a developer's .env
+        # usually still holds the placeholder, and running tests against a 20-byte key
+        # made PyJWT warn on every token while proving nothing.
         if self.environment == "test":
-            if not self.jwt_secret:
-                object.__setattr__(self, "jwt_secret", "test-secret-" + "x" * 32)
+            weak = (
+                not self.jwt_secret
+                or self.jwt_secret.lower() in FORBIDDEN_JWT_SECRETS
+                or len(self.jwt_secret) < MIN_JWT_SECRET_LENGTH
+            )
+            if weak:
+                object.__setattr__(self, "jwt_secret", "test-only-" + "k" * 40)
             return self
 
         secret = self.jwt_secret or ""

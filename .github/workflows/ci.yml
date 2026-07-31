@@ -12,28 +12,97 @@ jobs:
     defaults:
       run:
         working-directory: ./backend
+
+    services:
+      # The suite runs on SQLite for speed, but the migrations and the hand-written SQL
+      # in bespoke_tools.py are verified against the database production actually uses.
+      # Without this, a SQLite-only construct merges green and fails on deploy — which is
+      # exactly how `strftime` reached the trend queries.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: copilot
+          POSTGRES_PASSWORD: copilot
+          POSTGRES_DB: copilot_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
     - uses: actions/checkout@v7
+
     - name: Set up Python
       uses: actions/setup-python@v7
       with:
         python-version: '3.11'
         cache: 'pip'
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+
     - name: Lint with ruff
       run: ruff check .
+
     - name: Format with black
       run: black --check .
+
     - name: Test with pytest
       env:
         ENVIRONMENT: "test"
         ANTHROPIC_API_KEY: "test"
-        JWT_SECRET: "test"
         DATABASE_URL: "sqlite:///./test.db"
       run: PYTHONPATH=. pytest
+
+    # Migrations were never applied in CI, so drift between db/models.py and the
+    # migration history was invisible until someone deployed.
+    - name: Apply migrations to PostgreSQL
+      env:
+        ENVIRONMENT: "development"
+        JWT_SECRET: "ci-only-secret-long-enough-to-pass-validation"
+        ANTHROPIC_API_KEY: "test"
+        DATABASE_URL: "postgresql+psycopg://copilot:copilot@localhost:5432/copilot_ci"
+      run: alembic upgrade head
+
+    - name: Fail on model/migration drift
+      env:
+        ENVIRONMENT: "development"
+        JWT_SECRET: "ci-only-secret-long-enough-to-pass-validation"
+        ANTHROPIC_API_KEY: "test"
+        DATABASE_URL: "postgresql+psycopg://copilot:copilot@localhost:5432/copilot_ci"
+      # `alembic check` exits non-zero when the models imply a migration nobody wrote.
+      run: alembic check
+
+    - name: Run the full suite against PostgreSQL
+      env:
+        ENVIRONMENT: "test"
+        ANTHROPIC_API_KEY: "test"
+        DATABASE_URL: "postgresql+psycopg://copilot:copilot@localhost:5432/copilot_ci"
+      # This used to run three hand-picked files "for dialect coverage". The seven
+      # row-level-security tests were in none of them, and they skip on SQLite — so the
+      # tests guarding tenant isolation were executing nowhere at all, while the README
+      # claimed CI activated them. Run everything: the suite takes 19s, and a subset that
+      # silently excludes the security tests is worse than no Postgres job.
+      run: PYTHONPATH=. pytest -q
+
+    # Guards the above: if the RLS tests ever skip here (a renamed env var, a changed
+    # marker), the Postgres job would go green while testing nothing. Assert they ran.
+    - name: Assert the RLS tests actually executed
+      env:
+        ENVIRONMENT: "test"
+        ANTHROPIC_API_KEY: "test"
+        DATABASE_URL: "postgresql+psycopg://copilot:copilot@localhost:5432/copilot_ci"
+      run: |
+        PYTHONPATH=. pytest tests/test_row_level_security.py -q -rs | tee /tmp/rls.txt
+        if grep -qi "skipped" /tmp/rls.txt; then
+          echo "::error::RLS tests skipped on PostgreSQL — tenant isolation is untested."
+          exit 1
+        fi
 
   frontend:
     runs-on: ubuntu-latest
@@ -42,19 +111,27 @@ jobs:
         working-directory: ./frontend
     steps:
     - uses: actions/checkout@v7
+
     - name: Use Node.js
       uses: actions/setup-node@v7
       with:
         node-version: '22'
         cache: 'npm'
         cache-dependency-path: ./frontend/package-lock.json
+
     - name: Install dependencies
       run: npm ci
+
     - name: Lint
       run: npm run lint
+
     # Lint alone never compiled the app, so a type error or a broken import could merge
     # green and only fail at deploy time.
     - name: Typecheck
       run: npx tsc -b --noEmit
+
+    - name: Test
+      run: npm test
+
     - name: Build
       run: npm run build

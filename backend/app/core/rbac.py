@@ -74,8 +74,12 @@ def get_current_user(request: Request):
 
 
 class RoleChecker:
-    def __init__(self, allowed_endpoints: list[str] | None = None):
-        self.allowed_endpoints = allowed_endpoints or []
+    """Dependency that admits a request only if the caller's role covers its path.
+
+    Takes no arguments. It previously accepted an `allowed_endpoints` list that was
+    stored and never read — the decision has always come from ROLE_PERMISSIONS — so a
+    call site could pass a convincing-looking allow-list and silently have no effect.
+    """
 
     def __call__(
         self, request: Request, current_user: dict = Depends(get_current_user)
@@ -86,14 +90,14 @@ class RoleChecker:
                 status_code=status.HTTP_403_FORBIDDEN, detail="Unknown role"
             )
 
-        # Check endpoint access
-        # For this project, we check if the requested path starts with any allowed endpoint for the role
-        path = request.url.path
-        allowed = False
-        for ep in ROLE_PERMISSIONS[role]["endpoints"]:
-            if path.startswith(ep):
-                allowed = True
-                break
+        # Exact match, or a path segment beneath an allowed prefix. `startswith` alone
+        # let `/api/copilot/queryX` satisfy a grant of `/api/copilot/query`, so any
+        # future sibling route would inherit permissions it was never granted.
+        path = request.url.path.rstrip("/")
+        allowed = any(
+            path == endpoint or path.startswith(endpoint + "/")
+            for endpoint in ROLE_PERMISSIONS[role]["endpoints"]
+        )
 
         if not allowed:
             raise HTTPException(
