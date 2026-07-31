@@ -17,7 +17,7 @@ from starlette.concurrency import run_in_threadpool
 from app.core.config import settings
 from app.core.rbac import check_tool_access
 from app.orchestrator import tools as toolbox
-from app.orchestrator.prompts import SYSTEM_PROMPT
+from app.orchestrator.prompts import build_system_prompt
 from app.providers import (
     TextChunk,
     ToolCallStarted,
@@ -60,6 +60,8 @@ async def stream_orchestrator(
     token usage — the caller uses it to persist the turn once the stream has finished.
     """
     provider = get_provider()
+    # Rebuilt per request so the date it states stays correct in a long-lived process.
+    system_prompt = build_system_prompt()
 
     turns: list[Turn] = [
         Turn(role=t["role"], text=t["content"]) for t in (history or [])
@@ -108,7 +110,7 @@ async def stream_orchestrator(
             finished: TurnFinished | None = None
 
             async for event in provider.stream_turn(
-                system=SYSTEM_PROMPT,
+                system=system_prompt,
                 turns=turns,
                 tools=allowed_tools,
                 max_tokens=settings.max_tokens_per_turn,

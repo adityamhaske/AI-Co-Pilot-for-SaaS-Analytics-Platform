@@ -33,6 +33,11 @@ class ToolCall:
     id: str
     name: str
     arguments: dict[str, Any]
+    #: Opaque provider state that must be handed back verbatim on the next request.
+    #: Gemini attaches a `thought_signature` to each function call and rejects a
+    #: follow-up that replays the call without it. The loop never inspects this; only
+    #: the adapter that produced it knows what it means.
+    provider_state: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

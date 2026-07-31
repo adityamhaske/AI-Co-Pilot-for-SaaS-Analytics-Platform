@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Anything shorter than this is not a credible HMAC key for HS256.
@@ -40,11 +40,26 @@ class Settings(BaseSettings):
     #: Override the provider's default model. Blank means the provider's default.
     llm_model: str = ""
 
-    anthropic_api_key: str = ""
-    openai_api_key: str = ""
-    gemini_api_key: str = ""
+    # Each key accepts the vendor's own conventional variable name as well as ours.
+    # GOOGLE_API_KEY in particular is what google-genai reads by default, so a key
+    # already exported for the Google SDK works here without being renamed.
+    anthropic_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("ANTHROPIC_API_KEY", "CLAUDE_API_KEY"),
+    )
+    openai_api_key: str = Field(
+        default="", validation_alias=AliasChoices("OPENAI_API_KEY")
+    )
+    gemini_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    )
 
-    jwt_secret: str = ""
+    # JWT_SECRET_KEY is the more common spelling in the wild; accept both rather than
+    # silently ignoring a secret someone has clearly set on purpose.
+    jwt_secret: str = Field(
+        default="", validation_alias=AliasChoices("JWT_SECRET", "JWT_SECRET_KEY")
+    )
     database_url: str = "sqlite:///./test.db"
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:6002"])
 
@@ -70,11 +85,24 @@ class Settings(BaseSettings):
     daily_cost_limit_usd: float = 2.00
 
     # Token lifetimes.
-    access_token_ttl_minutes: int = 15
-    refresh_token_ttl_days: int = 7
+    access_token_ttl_minutes: int = Field(
+        default=15,
+        validation_alias=AliasChoices(
+            "ACCESS_TOKEN_TTL_MINUTES", "JWT_ACCESS_TOKEN_EXPIRE_MINUTES"
+        ),
+    )
+    refresh_token_ttl_days: int = Field(
+        default=7,
+        validation_alias=AliasChoices(
+            "REFRESH_TOKEN_TTL_DAYS", "JWT_REFRESH_TOKEN_EXPIRE_DAYS"
+        ),
+    )
 
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        populate_by_name=True,
     )
 
     @property

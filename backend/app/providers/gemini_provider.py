@@ -19,7 +19,11 @@ from app.providers.base import (
     strip_unsupported_schema_keys,
 )
 
-DEFAULT_MODEL = "gemini-2.5-pro"
+# `gemini-2.5-pro` was the previous default and is now rejected for new API keys with
+# "no longer available to new users" — it still appears in models.list(), so listing is
+# not proof of access. The `-latest` aliases track Google's current generally-available
+# model and do not go stale the same way. Override with LLM_MODEL.
+DEFAULT_MODEL = "gemini-flash-latest"
 
 
 def to_wire_tools(tools: list[ToolSpec]) -> list[dict[str, Any]]:
@@ -59,9 +63,16 @@ def to_wire_contents(turns: list[Turn]) -> list[dict[str, Any]]:
             if turn.text:
                 parts.append({"text": turn.text})
             for call in turn.tool_calls:
-                parts.append(
-                    {"function_call": {"name": call.name, "args": call.arguments}}
-                )
+                part: dict[str, Any] = {
+                    "function_call": {"name": call.name, "args": call.arguments}
+                }
+                # Gemini rejects a replayed function call whose thought_signature is
+                # missing: "required for tools to work correctly". It is opaque bytes we
+                # captured from the response and hand straight back.
+                signature = (call.provider_state or {}).get("thought_signature")
+                if signature:
+                    part["thought_signature"] = signature
+                parts.append(part)
             if parts:
                 contents.append({"role": "model", "parts": parts})
             continue
@@ -97,10 +108,19 @@ def _as_object(content: str) -> dict[str, Any]:
 
 
 def _stop_reason(raw: Any) -> str:
+    """Map Gemini's finish reason onto the neutral vocabulary.
+
+    The SDK hands back an enum, so `str()` yields "FinishReason.STOP" rather than "STOP".
+    Reading `.name` first — and falling back to the text after the last dot — is what
+    makes a normal completion report `end_turn` instead of `other`.
+    """
+    if raw is None:
+        return "other"
+    name = getattr(raw, "name", None) or str(raw).rsplit(".", 1)[-1]
     return {
         "STOP": "end_turn",
         "MAX_TOKENS": "max_tokens",
-    }.get(str(raw).upper(), "other")
+    }.get(name.upper(), "other")
 
 
 class GeminiProvider(ChatProvider):
@@ -173,11 +193,17 @@ class GeminiProvider(ChatProvider):
                         # Gemini has no call id, so one is synthesised. It only has to be
                         # unique within this turn for the loop to pair results correctly.
                         identifier = f"gemini_{call.name}_{len(calls)}"
+                        signature = getattr(part, "thought_signature", None)
                         calls.append(
                             ToolCall(
                                 id=identifier,
                                 name=call.name,
                                 arguments=dict(arguments) if arguments else {},
+                                provider_state=(
+                                    {"thought_signature": signature}
+                                    if signature
+                                    else None
+                                ),
                             )
                         )
                         if call.name not in announced:

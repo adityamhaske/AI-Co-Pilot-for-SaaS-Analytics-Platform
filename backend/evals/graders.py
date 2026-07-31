@@ -149,9 +149,25 @@ def grade_answer(expected: dict, answer: str) -> Verdict:
     return Verdict("answer", True)
 
 
+def grade_completion(run: dict) -> Verdict:
+    """Did the turn actually finish and say something?
+
+    Added after the first live run scored 100% while eight cases had produced no answer
+    at all: the model called the right tool, then burned its whole step budget and
+    emitted an error. The tool grader passed them. A user would have seen charts and no
+    explanation, so a suite that calls that a pass is measuring the wrong thing.
+    """
+    errors = run.get("errors") or []
+    if errors:
+        return Verdict("completion", False, f"ended with an error: {errors[0]}")
+    if not (run.get("answer") or "").strip():
+        return Verdict("completion", False, "produced no answer text")
+    return Verdict("completion", True)
+
+
 def grade_case(case: dict, run: dict) -> list[Verdict]:
     """Apply every grader the case asks for."""
-    verdicts: list[Verdict] = []
+    verdicts: list[Verdict] = [grade_completion(run)]
     calls = run["tool_calls"]
 
     if case.get("expect_no_tool"):

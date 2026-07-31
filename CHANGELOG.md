@@ -7,6 +7,41 @@ While the version is below 1.0.0 the API is not stable and minor versions may br
 
 ## [Unreleased]
 
+### Added
+- First live provider run. The eval suite had never been executed against a real API;
+  running it surfaced four adapter bugs that no unit test could have caught, all fixed
+  below. Result: 26/26 on 26 golden questions with `gemini-flash-latest`.
+- `grade_completion`, which fails any case that ends with an error or an empty answer.
+  Added after a run scored 100% while eight cases produced no answer text at all — the
+  tool grader passed them because the *call* was correct. A suite that calls that a pass
+  is measuring the wrong thing.
+- The current date in the system prompt. Without it the model did not know what "now"
+  was: asked for "the last 6 months" it guessed a year, got an empty result, guessed
+  another, and exhausted its step budget across 2022-2027 without ever answering. This
+  was the single largest source of failure in the first run — fixing it took step-limit
+  warnings from 8 to 0 and halved p95 latency (14.8s to 7.1s).
+- `ToolCall.provider_state`, carrying opaque per-provider data that must round-trip.
+  Gemini rejects a replayed function call whose `thought_signature` is missing.
+- `AliasChoices` on the API-key and secret settings, so `GOOGLE_API_KEY` and
+  `JWT_SECRET_KEY` are accepted alongside the documented names.
+
+### Changed
+- Gemini's default model is now `gemini-flash-latest`. `gemini-2.5-pro` is rejected for
+  new API keys ("no longer available to new users") while still appearing in
+  `models.list()` — listing is not proof of access.
+- The two prompt-injection eval cases assert on disclosure rather than on a substring.
+  Both previously failed a *correct* refusal for quoting the forbidden term back
+  ("I cannot present estimated figures as real data" tripped a ban on "estimated").
+- Budget tests price against an explicit provider instead of the ambient
+  `LLM_PROVIDER`. They hardcoded Anthropic's rates and so failed, correctly priced, for
+  anyone whose `.env` selected another provider.
+
+### Fixed
+- Gemini reported `stop_reason=other` on every normal completion. The SDK returns an
+  enum, so `str()` yields `FinishReason.STOP` rather than `STOP`; `_stop_reason` now
+  reads `.name` first.
+- The eval runner checked for `ANTHROPIC_API_KEY` regardless of the selected provider.
+
 ### Changed
 - **Replaced `python-jose` with `PyJWT`.** python-jose is effectively unmaintained, and
   its willingness to sign and verify with an empty HMAC key was the mechanism behind the
