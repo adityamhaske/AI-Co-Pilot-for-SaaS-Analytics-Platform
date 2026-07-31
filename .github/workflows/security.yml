@@ -51,3 +51,29 @@ jobs:
         uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Branch protection on main requires a check named `security`. `Security` is this
+  # workflow's *name*, but GitHub matches required contexts against *job* names — so the
+  # required check could never report, and no pull request could merge into main at all.
+  #
+  # This job is that context. It has no steps of its own: it exists to turn "both security
+  # jobs succeeded" into a single name the protection rule can require, so adding a third
+  # job later does not mean editing repo settings to keep it enforced.
+  #
+  # `if: always()` with an explicit result check, rather than bare `needs`, because a
+  # skipped or cancelled dependency does not run this job at all under the default
+  # condition — which GitHub reports as success, and the gate would pass while nothing ran.
+  security:
+    runs-on: ubuntu-latest
+    needs: [dependencies, secrets]
+    if: always()
+    steps:
+      - name: Require both security jobs to have succeeded
+        run: |
+          echo "dependencies: ${{ needs.dependencies.result }}"
+          echo "secrets:      ${{ needs.secrets.result }}"
+          if [ "${{ needs.dependencies.result }}" != "success" ] || \
+             [ "${{ needs.secrets.result }}" != "success" ]; then
+            echo "::error::A security job did not succeed."
+            exit 1
+          fi
