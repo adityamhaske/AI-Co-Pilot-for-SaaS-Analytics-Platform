@@ -194,7 +194,9 @@ def test_cost_estimate_prices_each_provider_separately(provider, expected):
 def test_cost_estimate_falls_back_for_an_unknown_provider():
     # Unknown names price at the most expensive published rate rather than free, so a
     # misconfiguration cannot quietly disable the budget ceiling.
-    assert estimate_cost(1_000_000, 1_000_000, "no-such-provider") == pytest.approx(18.0)
+    assert estimate_cost(1_000_000, 1_000_000, "no-such-provider") == pytest.approx(
+        18.0
+    )
 
 
 def test_spend_accumulates(token_user):
