@@ -78,14 +78,31 @@ jobs:
       # `alembic check` exits non-zero when the models imply a migration nobody wrote.
       run: alembic check
 
-    - name: Run the tool suite against PostgreSQL
+    - name: Run the full suite against PostgreSQL
       env:
         ENVIRONMENT: "test"
         ANTHROPIC_API_KEY: "test"
         DATABASE_URL: "postgresql+psycopg://copilot:copilot@localhost:5432/copilot_ci"
-      # Only the tests that touch SQL — the point is dialect coverage, not a second full
-      # run. `-p no:randomly` keeps the shared-schema fixtures deterministic.
-      run: PYTHONPATH=. pytest tests/test_metrics.py tests/test_registry.py tests/test_evals.py -q
+      # This used to run three hand-picked files "for dialect coverage". The seven
+      # row-level-security tests were in none of them, and they skip on SQLite — so the
+      # tests guarding tenant isolation were executing nowhere at all, while the README
+      # claimed CI activated them. Run everything: the suite takes 19s, and a subset that
+      # silently excludes the security tests is worse than no Postgres job.
+      run: PYTHONPATH=. pytest -q
+
+    # Guards the above: if the RLS tests ever skip here (a renamed env var, a changed
+    # marker), the Postgres job would go green while testing nothing. Assert they ran.
+    - name: Assert the RLS tests actually executed
+      env:
+        ENVIRONMENT: "test"
+        ANTHROPIC_API_KEY: "test"
+        DATABASE_URL: "postgresql+psycopg://copilot:copilot@localhost:5432/copilot_ci"
+      run: |
+        PYTHONPATH=. pytest tests/test_row_level_security.py -q -rs | tee /tmp/rls.txt
+        if grep -qi "skipped" /tmp/rls.txt; then
+          echo "::error::RLS tests skipped on PostgreSQL — tenant isolation is untested."
+          exit 1
+        fi
 
   frontend:
     runs-on: ubuntu-latest
