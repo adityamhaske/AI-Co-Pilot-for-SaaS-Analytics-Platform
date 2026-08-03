@@ -1,14 +1,21 @@
 name: Evals
 
-# These call the real Anthropic API, so they cost money and need a secret. They do not
-# run on pull requests from forks. The harness itself — dataset integrity and the
-# fixture's expected values — is checked without an API key by the normal test job.
+# These call a real provider API, so they cost money and need a secret. The harness
+# itself — dataset integrity and the fixture's hand-computed expected values — is checked
+# without any key by the normal test job.
+#
+# Which provider runs is `vars.LLM_PROVIDER` (a repository variable), overridable per run
+# from the Actions tab. It used to be hardcoded to Anthropic, which meant a repo
+# configured for Gemini had a nightly job that could only ever fail.
 on:
   schedule:
     # 06:00 UTC daily. Model behaviour drifts; a nightly number catches it.
     - cron: '0 6 * * *'
   workflow_dispatch:
     inputs:
+      provider:
+        description: 'anthropic | openai | gemini (blank uses the repo variable)'
+        required: false
       category:
         description: 'Only run one category (direct, rbac, adversarial, ...)'
         required: false
@@ -20,13 +27,38 @@ on:
 jobs:
   evals:
     runs-on: ubuntu-latest
-    # Without a key the run would fail for the wrong reason.
-    if: github.repository_owner != ''
     defaults:
       run:
         working-directory: ./backend
+    env:
+      LLM_PROVIDER: ${{ github.event.inputs.provider || vars.LLM_PROVIDER || 'anthropic' }}
     steps:
       - uses: actions/checkout@v7
+
+      # Fail here, with the name of the missing secret, rather than 30 seconds later
+      # inside the runner with an auth error. The previous `if:` guard on this job was
+      # `github.repository_owner != ''`, which is always true and checked nothing — so a
+      # repo with no secrets set failed nightly with a message about the wrong thing.
+      #
+      # This fails rather than skips deliberately: a green check for a suite that never
+      # ran is the failure mode these evals exist to prevent.
+      - name: Check the selected provider has a key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          case "$LLM_PROVIDER" in
+            anthropic) name=ANTHROPIC_API_KEY; value="$ANTHROPIC_API_KEY" ;;
+            openai)    name=OPENAI_API_KEY;    value="$OPENAI_API_KEY" ;;
+            gemini)    name=GEMINI_API_KEY;    value="$GEMINI_API_KEY" ;;
+            *) echo "::error::LLM_PROVIDER is '$LLM_PROVIDER' (expected anthropic, openai or gemini)"; exit 1 ;;
+          esac
+          if [ -z "$value" ]; then
+            echo "::error::LLM_PROVIDER is '$LLM_PROVIDER' but the $name repository secret is not set."
+            exit 1
+          fi
+          echo "Provider: $LLM_PROVIDER (key present)"
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -35,9 +67,15 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
+        # requirements.txt carries only the Anthropic client; the others are extras in
+        # pyproject. Installing the wrong one is a ProviderError on the first question.
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          case "$LLM_PROVIDER" in
+            openai) pip install 'openai>=1.40' ;;
+            gemini) pip install 'google-genai>=1.0' ;;
+          esac
 
       - name: Run migrations
         env:
@@ -50,6 +88,8 @@ jobs:
         env:
           ENVIRONMENT: development
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           JWT_SECRET: ${{ secrets.JWT_SECRET || 'ci-only-secret-not-used-for-anything-real' }}
           DATABASE_URL: sqlite:///./evals.db
         run: |
@@ -62,6 +102,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: eval-results
+          # Named per provider so a manual Gemini run does not overwrite the nightly one.
+          name: eval-results-${{ env.LLM_PROVIDER }}
           path: backend/eval-results.json
           retention-days: 30

@@ -307,8 +307,14 @@ async def test_provider_failure_surfaces_a_generic_error(db_session):
 
     output = await run(Exploding(), db_session)
     body = "".join(output)
+    # The point of this test: the vendor's exception text reaches the log and nothing
+    # else. A raised key, a request id or an internal endpoint must not travel with it.
     assert "sk-secret-123" not in body
-    assert "unexpected error" in body
+    assert "rejected" not in body
+    # Classified as `provider` rather than `internal` — the message changed with that,
+    # but what the caller is not told did not.
+    errors = [e for e in parse_events(output) if e.get("type") == "error"]
+    assert errors and errors[0]["kind"] == "provider"
     assert output[-1] == "data: [DONE]\n\n"
 
 
@@ -388,3 +394,90 @@ async def test_deadline_is_not_checked_before_the_first_step(db_session, monkeyp
     assert provider.calls == 1
     tokens = [e for e in parse_events(output) if e.get("type") == "token"]
     assert tokens
+
+
+# ---------------------------------------------------------------------------
+# Error classification
+#
+# Added after a live eval run scored a case as a model failure when the actual cause was
+# a transient fault reaching the vendor. Both surfaced as the same opaque event, so a
+# dropped socket and a bug here were indistinguishable to the caller and to the suite.
+# ---------------------------------------------------------------------------
+
+
+class ExplodingProvider:
+    """Raises from inside stream_turn, the way an SDK does on a 5xx or a rate limit."""
+
+    name = "fake"
+    model = "fake-1"
+
+    def __init__(self, exc: BaseException):
+        self._exc = exc
+
+    async def stream_turn(self, *, system, turns, tools, max_tokens):
+        raise self._exc
+        yield  # pragma: no cover - makes this an async generator
+
+
+@pytest.mark.asyncio
+async def test_a_vendor_failure_is_reported_as_a_provider_error(db_session):
+    output = await run(
+        ExplodingProvider(RuntimeError("503 Service Unavailable")), db_session
+    )
+    errors = [e for e in parse_events(output) if e.get("type") == "error"]
+
+    assert errors and errors[0]["kind"] == "provider"
+    # The vendor's text can carry request ids and internal endpoints, so it is logged
+    # rather than sent on. Only the class travels.
+    assert "503" not in errors[0]["message"]
+    assert output[-1] == "data: [DONE]\n\n"
+
+
+@pytest.mark.asyncio
+async def test_a_provider_error_subclass_is_not_relabelled(db_session):
+    from app.providers import ProviderCallFailed
+
+    output = await run(
+        ExplodingProvider(ProviderCallFailed("upstream timeout")), db_session
+    )
+    errors = [e for e in parse_events(output) if e.get("type") == "error"]
+
+    assert errors and errors[0]["kind"] == "provider"
+
+
+@pytest.mark.asyncio
+async def test_a_failure_outside_the_vendor_call_stays_internal(db_session):
+    """Only the vendor call is reclassified; a bug in our own code must not hide in it."""
+    provider = FakeProvider(
+        tool_turn(ToolCall(id="1", name="get_metric_value", arguments={}))
+    )
+
+    with patch("app.streaming.sse.check_tool_access", side_effect=RuntimeError("bug")):
+        output = await run(provider, db_session)
+
+    errors = [e for e in parse_events(output) if e.get("type") == "error"]
+    assert errors and errors[0]["kind"] == "internal"
+
+
+@pytest.mark.asyncio
+async def test_a_client_disconnect_is_not_relabelled_a_provider_fault(db_session):
+    """CancelledError is a BaseException, so it must propagate rather than be caught."""
+    import asyncio
+
+    with pytest.raises(asyncio.CancelledError):
+        await run(ExplodingProvider(asyncio.CancelledError()), db_session)
+
+
+@pytest.mark.asyncio
+async def test_the_step_limit_error_carries_its_own_kind(db_session):
+    provider = FakeProvider(
+        tool_turn(
+            ToolCall(id="1", name="get_metric_value", arguments={"metric": "mrr"})
+        )
+    )
+
+    with patch("app.orchestrator.tools.execute", return_value={"ok": True}):
+        output = await run(provider, db_session)
+
+    errors = [e for e in parse_events(output) if e.get("type") == "error"]
+    assert errors and errors[0]["kind"] == "step_limit"

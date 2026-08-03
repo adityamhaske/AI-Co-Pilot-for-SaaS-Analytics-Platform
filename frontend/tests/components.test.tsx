@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { Composer } from "@/features/chat/Composer";
 import { EmptyState } from "@/features/chat/EmptyState";
+import { MessageList } from "@/features/chat/MessageList";
 import { ResultChart } from "@/features/chart/ResultChart";
 import { ToolTrace } from "@/features/chat/ToolTrace";
 import type { CurrentUser } from "@/lib/api";
@@ -266,5 +267,84 @@ describe("EmptyState", () => {
     render(<EmptyState user={null} onPick={vi.fn()} />);
     expect(screen.getByText(/what is my mrr/i)).toBeInTheDocument();
     expect(screen.queryByText(/billing alerts/i)).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Error notices
+//
+// The backend distinguishes a vendor outage from a step limit; the UI used to render
+// both as the same red box. "The answer above is incomplete, ask something narrower" and
+// "nothing worked" are different instructions and should not look identical.
+// ---------------------------------------------------------------------------
+
+describe("error notices", () => {
+  const base = {
+    id: "m1",
+    role: "assistant" as const,
+    content: "Your MRR is $5,600.",
+    tools: [],
+  };
+
+  it("treats a step limit as a warning, not a failure", () => {
+    render(
+      <MessageList
+        messages={[
+          { ...base, error: "Stopped after 6 steps.", errorKind: "step_limit" as const },
+        ]}
+        user={null}
+        activeTool={null}
+      />,
+    );
+    const notice = screen.getByRole("status");
+    expect(notice).toHaveAttribute("data-error-kind", "step_limit");
+    expect(notice.className).toContain("warning");
+    expect(notice.className).not.toContain("danger");
+    // The partial answer is still shown — the warning is about it, not instead of it.
+    expect(screen.getByText(/Your MRR is \$5,600/)).toBeInTheDocument();
+    expect(screen.getByText(/narrower question/i)).toBeInTheDocument();
+  });
+
+  it("treats a provider outage as a failure", () => {
+    render(
+      <MessageList
+        messages={[
+          { ...base, content: "", error: "Provider unreachable.", errorKind: "provider" as const },
+        ]}
+        user={null}
+        activeTool={null}
+      />,
+    );
+    const notice = screen.getByRole("alert");
+    expect(notice).toHaveAttribute("data-error-kind", "provider");
+    expect(notice.className).toContain("danger");
+    expect(screen.getByText(/Model provider unavailable/i)).toBeInTheDocument();
+  });
+
+  it("falls back to a failure when the backend sends no kind", () => {
+    render(
+      <MessageList
+        messages={[{ ...base, content: "", error: "Boom." }]}
+        user={null}
+        activeTool={null}
+      />,
+    );
+    const notice = screen.getByRole("alert");
+    expect(notice).toHaveAttribute("data-error-kind", "internal");
+    expect(screen.getByText(/Something went wrong/i)).toBeInTheDocument();
+  });
+
+  it("does not interrupt a screen reader for a partial answer", () => {
+    // role=status is polite; role=alert is assertive. A warning that arrives while the
+    // user is reading the answer above it must not cut that off.
+    render(
+      <MessageList
+        messages={[{ ...base, error: "Stopped early.", errorKind: "timeout" as const }]}
+        user={null}
+        activeTool={null}
+      />,
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("status")).toBeInTheDocument();
   });
 });
