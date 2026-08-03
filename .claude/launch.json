@@ -2,9 +2,26 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "api",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "DATABASE_URL=sqlite:///./demo.db",
+        "ENVIRONMENT=development",
+        ".venv/bin/uvicorn",
+        "app.main:app",
+        "--port",
+        "6001"
+      ],
+      "cwd": "backend",
+      "port": 6001
+    },
+    {
       "name": "web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "cwd": "frontend",
       "port": 6002
     }

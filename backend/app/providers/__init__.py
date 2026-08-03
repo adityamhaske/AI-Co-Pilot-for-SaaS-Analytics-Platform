@@ -11,6 +11,7 @@ import structlog
 from app.core.config import settings
 from app.providers.base import (
     ChatProvider,
+    ProviderCallFailed,
     ProviderError,
     ProviderEvent,
     TextChunk,
@@ -20,6 +21,7 @@ from app.providers.base import (
     ToolSpec,
     Turn,
     TurnFinished,
+    is_retryable_provider_error,
 )
 
 logger = structlog.get_logger()
@@ -87,6 +89,7 @@ __all__ = [
     "PRICING",
     "SUPPORTED",
     "ChatProvider",
+    "ProviderCallFailed",
     "ProviderError",
     "ProviderEvent",
     "TextChunk",
@@ -97,6 +100,7 @@ __all__ = [
     "Turn",
     "TurnFinished",
     "get_provider",
+    "is_retryable_provider_error",
     "pricing_for",
     "reset_provider_cache",
 ]
