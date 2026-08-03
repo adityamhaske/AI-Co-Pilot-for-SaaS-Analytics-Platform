@@ -11,6 +11,7 @@ import structlog
 from app.core.config import settings
 from app.providers.base import (
     ChatProvider,
+    ProviderCallFailed,
     ProviderError,
     ProviderEvent,
     TextChunk,
@@ -87,6 +88,7 @@ __all__ = [
     "PRICING",
     "SUPPORTED",
     "ChatProvider",
+    "ProviderCallFailed",
     "ProviderError",
     "ProviderEvent",
     "TextChunk",

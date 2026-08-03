@@ -28,6 +28,9 @@ services:
   migrate:
     build:
       context: ./backend
+      args:
+        # Migrations import the app, so this image needs the same SDK as the API.
+        LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
     command: alembic upgrade head
     env_file: ./backend/.env
     environment:
@@ -41,6 +44,11 @@ services:
   api:
     build:
       context: ./backend
+      args:
+        # Selects which vendor SDK is baked into the image. Read from the shell (or a
+        # top-level .env), NOT from backend/.env — env_file applies at run time, and the
+        # SDK has to be present at build time. Changing provider needs --build.
+        LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
     ports:
       - "6001:6001"
     env_file: ./backend/.env

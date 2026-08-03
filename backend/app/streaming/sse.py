@@ -19,6 +19,7 @@ from app.core.rbac import check_tool_access
 from app.orchestrator import tools as toolbox
 from app.orchestrator.prompts import build_system_prompt
 from app.providers import (
+    ProviderCallFailed,
     TextChunk,
     ToolCallStarted,
     ToolResult,
@@ -99,6 +100,7 @@ async def stream_orchestrator(
                 yield _event(
                     {
                         "type": "error",
+                        "kind": "timeout",
                         "message": (
                             f"Stopped after {settings.agent_timeout_seconds:.0f} seconds. "
                             "The answer above may be incomplete."
@@ -109,19 +111,30 @@ async def stream_orchestrator(
 
             finished: TurnFinished | None = None
 
-            async for event in provider.stream_turn(
-                system=system_prompt,
-                turns=turns,
-                tools=allowed_tools,
-                max_tokens=settings.max_tokens_per_turn,
-            ):
-                if isinstance(event, TextChunk):
-                    answer_parts.append(event.text)
-                    yield _event({"type": "token", "text": event.text})
-                elif isinstance(event, ToolCallStarted):
-                    yield _event({"type": "tool_call", "name": event.name})
-                elif isinstance(event, TurnFinished):
-                    finished = event
+            # Failures from inside the vendor call are tagged before they reach the
+            # handler below. A 5xx or a rate limit is not the same event as a bug in this
+            # system, and reporting them identically means the eval suite scores a dropped
+            # socket as a wrong answer — which it did, until this told them apart.
+            try:
+                async for event in provider.stream_turn(
+                    system=system_prompt,
+                    turns=turns,
+                    tools=allowed_tools,
+                    max_tokens=settings.max_tokens_per_turn,
+                ):
+                    if isinstance(event, TextChunk):
+                        answer_parts.append(event.text)
+                        yield _event({"type": "token", "text": event.text})
+                    elif isinstance(event, ToolCallStarted):
+                        yield _event({"type": "tool_call", "name": event.name})
+                    elif isinstance(event, TurnFinished):
+                        finished = event
+            except ProviderCallFailed:
+                raise
+            except Exception as exc:
+                # CancelledError is a BaseException, so a client disconnect still
+                # propagates untouched rather than being relabelled a provider fault.
+                raise ProviderCallFailed(str(exc)) from exc
 
             if finished is None:
                 logger.warning("provider_finished_without_summary", step=step)
@@ -237,6 +250,7 @@ async def stream_orchestrator(
             yield _event(
                 {
                     "type": "error",
+                    "kind": "step_limit",
                     "message": (
                         f"Stopped after {settings.max_agent_steps} tool-calling steps. "
                         "Try asking a narrower question."
@@ -249,6 +263,22 @@ async def stream_orchestrator(
         # is torn down instead of billing for tokens nobody will read.
         logger.info("stream_cancelled", tenant_id=tenant_id)
         raise
+    except ProviderCallFailed as exc:
+        # The vendor, not us. Logged in full; the caller gets the class and nothing else,
+        # since the exception text can carry request ids and internal endpoints.
+        logger.warning(
+            "provider_call_failed",
+            tenant_id=tenant_id,
+            provider=provider.name,
+            error=str(exc),
+        )
+        yield _event(
+            {
+                "type": "error",
+                "kind": "provider",
+                "message": "The model provider could not be reached. Please try again.",
+            }
+        )
     except Exception as exc:
         logger.exception(
             "stream_failed",
@@ -257,7 +287,11 @@ async def stream_orchestrator(
             error=str(exc),
         )
         yield _event(
-            {"type": "error", "message": "The assistant hit an unexpected error."}
+            {
+                "type": "error",
+                "kind": "internal",
+                "message": "The assistant hit an unexpected error.",
+            }
         )
     else:
         yield _event(

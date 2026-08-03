@@ -114,6 +114,16 @@ class ProviderError(RuntimeError):
     """Configuration or availability problem with a provider. Fatal at startup."""
 
 
+class ProviderCallFailed(ProviderError):
+    """A request to the vendor failed mid-turn: a 5xx, a rate limit, a dropped socket.
+
+    Separate from ProviderError because the cause is different in kind. A missing SDK or
+    an absent key is a misconfiguration that will fail identically every time; this is
+    weather. The distinction is what lets the eval suite retry one and not the other, and
+    stops a transient network fault being reported as a wrong answer from the model.
+    """
+
+
 def coerce_int(value: Any) -> int:
     """Usage counters vary in type and presence across SDKs."""
     try:
