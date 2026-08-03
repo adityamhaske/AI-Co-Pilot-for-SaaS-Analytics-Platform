@@ -42,6 +42,7 @@ async def run_case(case: dict, tenant_id: str) -> dict:
     text_parts: list[str] = []
     errors: list[str] = []
     error_kinds: list[str] = []
+    permanent: list[str] = []
 
     db = SessionLocal()
     started = time.perf_counter()
@@ -68,6 +69,8 @@ async def run_case(case: dict, tenant_id: str) -> dict:
                 errors.append(event["message"])
                 # `kind` separates a vendor fault from a step limit or a bug here.
                 error_kinds.append(event.get("kind", "internal"))
+                if event.get("kind") == "provider" and not event.get("retryable", True):
+                    permanent.append(event["message"])
     finally:
         db.close()
 
@@ -80,6 +83,7 @@ async def run_case(case: dict, tenant_id: str) -> dict:
         "tool_calls": tool_calls,
         "errors": errors,
         "error_kinds": error_kinds,
+        "permanent_error": bool(permanent),
         "expected_value": expected_value,
         "latency_s": round(time.perf_counter() - started, 2),
     }
@@ -106,6 +110,9 @@ async def run_all(cases: list[dict], concurrency: int, tenant_id: str) -> list[d
                     attempts = attempt + 1
                     run = await run_case(case, tenant_id)
                     if "provider" not in (run.get("error_kinds") or []):
+                        break
+                    if run.get("permanent_error"):
+                        # A bad key or an exhausted quota fails identically every time.
                         break
                     if attempt < PROVIDER_RETRIES:
                         await asyncio.sleep(2**attempt)

@@ -121,7 +121,61 @@ class ProviderCallFailed(ProviderError):
     an absent key is a misconfiguration that will fail identically every time; this is
     weather. The distinction is what lets the eval suite retry one and not the other, and
     stops a transient network fault being reported as a wrong answer from the model.
+
+    `retryable` splits it once more. Not everything reaching the vendor is weather: an
+    exhausted quota arrives as a 429 exactly like a rate limit, but waiting does not fix
+    it. Retrying those burns the caller's time to arrive at the same failure.
     """
+
+    def __init__(self, *args: Any, retryable: bool = True):
+        super().__init__(*args)
+        self.retryable = retryable
+
+
+#: Substrings that mark a failure as settled rather than transient. Matched against the
+#: exception text because the three SDKs report these through different attributes, and a
+#: substring check degrades to "assume transient" rather than crashing on an unknown shape.
+_PERMANENT_MARKERS = (
+    "insufficient_quota",
+    "exceeded your current quota",
+    "invalid_api_key",
+    "invalid api key",
+    "api key not valid",
+    "permission_denied",
+    "model_not_found",
+    "does not exist or you do not have access",
+    "no longer available",
+)
+
+
+def _status_code(exc: BaseException) -> int | None:
+    for attribute in ("status_code", "code", "http_status"):
+        value = getattr(exc, attribute, None)
+        if isinstance(value, int):
+            return value
+    return None
+
+
+def is_retryable_provider_error(exc: BaseException) -> bool:
+    """Whether asking the vendor the same thing again could plausibly work.
+
+    Unknown shapes are treated as retryable: the commonest failure with no status code at
+    all is a dropped connection, and being asked twice is a smaller cost than scoring a
+    network blip as a wrong answer. The markers above are what a retry cannot fix.
+    """
+    text = str(exc).lower()
+    if any(marker in text for marker in _PERMANENT_MARKERS):
+        return False
+
+    status = _status_code(exc)
+    if status is None:
+        return True
+    if status == 429:
+        # Rate limits pass; quota exhaustion was caught by the markers above.
+        return True
+    if status in (408, 409):
+        return True
+    return status >= 500
 
 
 def coerce_int(value: Any) -> int:

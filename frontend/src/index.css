@@ -48,6 +48,7 @@
     --danger-subtle: 252 238 238;
     --success: 20 108 46;
     --warning: 158 106 3;
+    --warning-subtle: 254 246 229;
 
     /* Chart series. */
     --series-1: 42 120 214;
@@ -83,6 +84,7 @@
     --danger-subtle: 62 26 24;
     --success: 109 219 141;
     --warning: 249 191 90;
+    --warning-subtle: 61 44 16;
 
     --series-1: 57 135 229;
     --series-2: 217 89 38;
@@ -117,6 +119,7 @@
       --danger-subtle: 62 26 24;
       --success: 109 219 141;
       --warning: 249 191 90;
+      --warning-subtle: 61 44 16;
 
       --series-1: 57 135 229;
       --series-2: 217 89 38;
