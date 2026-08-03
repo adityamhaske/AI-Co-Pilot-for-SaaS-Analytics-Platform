@@ -41,6 +41,7 @@ async def run_case(case: dict, tenant_id: str) -> dict:
     tool_calls: list[dict] = []
     text_parts: list[str] = []
     errors: list[str] = []
+    error_kinds: list[str] = []
 
     db = SessionLocal()
     started = time.perf_counter()
@@ -65,6 +66,8 @@ async def run_case(case: dict, tenant_id: str) -> dict:
                 )
             elif kind == "error":
                 errors.append(event["message"])
+                # `kind` separates a vendor fault from a step limit or a bug here.
+                error_kinds.append(event.get("kind", "internal"))
     finally:
         db.close()
 
@@ -76,6 +79,7 @@ async def run_case(case: dict, tenant_id: str) -> dict:
         "answer": "".join(text_parts),
         "tool_calls": tool_calls,
         "errors": errors,
+        "error_kinds": error_kinds,
         "expected_value": expected_value,
         "latency_s": round(time.perf_counter() - started, 2),
     }
@@ -87,10 +91,24 @@ async def run_all(cases: list[dict], concurrency: int, tenant_id: str) -> list[d
     semaphore = asyncio.Semaphore(concurrency)
     results: list[dict] = []
 
+    # A 5xx or a rate limit says nothing about whether the model picks the right tool,
+    # but it used to score exactly like a wrong answer: one dropped socket during a live
+    # run took a category from 8/8 to 7/8. Retrying only `provider` errors keeps that out
+    # of the number without letting a genuine failure be retried into a pass. Retries are
+    # counted and printed, so a run propped up by them cannot look clean.
+    PROVIDER_RETRIES = 2
+
     async def one(case: dict) -> None:
         async with semaphore:
+            attempts = 0
             try:
-                run = await run_case(case, tenant_id)
+                for attempt in range(PROVIDER_RETRIES + 1):
+                    attempts = attempt + 1
+                    run = await run_case(case, tenant_id)
+                    if "provider" not in (run.get("error_kinds") or []):
+                        break
+                    if attempt < PROVIDER_RETRIES:
+                        await asyncio.sleep(2**attempt)
             except Exception as exc:  # a crash is a failure, not a lost data point
                 results.append(
                     {
@@ -108,6 +126,7 @@ async def run_all(cases: list[dict], concurrency: int, tenant_id: str) -> list[d
                 )
                 return
 
+            run["attempts"] = attempts
             verdicts = grade_case(case, run)
             results.append(
                 {
@@ -121,6 +140,7 @@ async def run_all(cases: list[dict], concurrency: int, tenant_id: str) -> list[d
                         for c in run["tool_calls"]
                     ],
                     "errors": run["errors"],
+                    "attempts": attempts,
                     "verdicts": [
                         {"name": v.name, "passed": v.passed, "reason": v.reason}
                         for v in verdicts
@@ -192,6 +212,16 @@ def report(results: list[dict], threshold: float) -> bool:
         print(
             f"\nLatency  median {statistics.median(latencies):.1f}s   "
             f"p95 {p95:.1f}s   max {max(latencies):.1f}s"
+        )
+
+    # Printed whenever it is non-zero. A retried run is still a real result, but a number
+    # that needed the provider asked twice is not the same as one that did not, and the
+    # reader is owed that rather than having it absorbed into the headline.
+    retried = [r for r in results if (r.get("attempts") or 1) > 1]
+    if retried:
+        print(
+            f"\nProvider retries  {len(retried)} case(s) re-run after the vendor failed: "
+            + ", ".join(sorted(r["id"] for r in retried))
         )
 
     print(

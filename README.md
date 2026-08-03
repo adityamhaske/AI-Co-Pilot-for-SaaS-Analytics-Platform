@@ -101,8 +101,13 @@ LLM_MODEL=                 # blank uses the provider's default
 The agent loop is provider-neutral: it speaks the types in
 [`app/providers/base.py`](backend/app/providers/base.py) and never touches a vendor SDK.
 Each adapter translates tool schemas, conversation shape and streaming events — the three
-things every vendor does differently, and the part that is
-[tested directly](backend/tests/test_providers.py). Spend is priced per provider, so
+things every vendor does differently — in both directions, and both are tested directly:
+[outbound](backend/tests/test_providers.py) (neutral types to each wire format) and
+[inbound](backend/tests/test_provider_streams.py) (each SDK's response objects back to
+neutral types). The split matters: the outbound half was well covered and none of it was
+wrong, while **every** bug the first live run found was inbound — an enum that stringified
+to `FinishReason.STOP`, an opaque token that had to round-trip, arguments arriving as
+fragments keyed only by an index. Spend is priced per provider, so
 switching does not silently meter against the wrong rates.
 
 ## Dark theme
@@ -139,8 +144,17 @@ frontend built and served by nginx.
 
 ```bash
 cp backend/.env.example backend/.env   # set LLM_PROVIDER and the matching API key
+export LLM_PROVIDER=gemini             # or anthropic (default), or openai
 docker compose up --build
 ```
+
+`LLM_PROVIDER` is needed **twice, in two different places**, and they are not
+interchangeable. In `backend/.env` it selects the provider at run time; exported in the
+shell it is a build argument that decides which vendor SDK is installed into the image.
+Only one client is baked in, which is the point of the extras — but it means switching
+provider is `docker compose up --build`, not a restart. Miss the export and the image
+starts cleanly and then fails on the first question with
+`The 'google-genai' package is not installed`.
 
 Open <http://localhost:8080>. Sign in as `admin@test.com` / `password123`.
 
@@ -180,7 +194,7 @@ python -c 'import secrets; print(secrets.token_urlsafe(48))'
 cd backend && ENVIRONMENT=test PYTHONPATH=. pytest
 ```
 
-290 backend tests plus 47 frontend tests, no API key needed. Metric arithmetic is
+312 backend tests plus 47 frontend tests, no API key needed. Metric arithmetic is
 deterministic and asserted to exact numbers; provider translation, tenant isolation,
 token revocation and the agent loop's bounds are all covered. The suite passes
 identically under all three `LLM_PROVIDER` values, so a local `.env` cannot change the
