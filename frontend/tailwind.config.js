@@ -41,7 +41,10 @@ export default {
           subtle: "rgb(var(--danger-subtle) / <alpha-value>)",
         },
         success: "rgb(var(--success) / <alpha-value>)",
-        warning: "rgb(var(--warning) / <alpha-value>)",
+        warning: {
+          DEFAULT: "rgb(var(--warning) / <alpha-value>)",
+          subtle: "rgb(var(--warning-subtle) / <alpha-value>)",
+        },
         series: {
           1: "rgb(var(--series-1) / <alpha-value>)",
           2: "rgb(var(--series-2) / <alpha-value>)",

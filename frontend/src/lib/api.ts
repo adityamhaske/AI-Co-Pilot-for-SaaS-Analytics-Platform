@@ -163,7 +163,18 @@ export type StreamEvent =
   | { type: "tool_call"; name: string }
   | { type: "tool_result"; name: string; input?: Record<string, unknown>; data: unknown }
   | { type: "usage"; input_tokens: number; output_tokens: number }
-  | { type: "error"; message: string };
+  | {
+      type: "error";
+      message: string;
+      /**
+       * Why the turn stopped. `step_limit` and `timeout` leave a real, partial answer
+       * above them; `provider` and `internal` usually leave nothing. The UI needs the
+       * difference to know whether it is showing a warning or a failure.
+       */
+      kind?: "provider" | "internal" | "step_limit" | "timeout";
+      /** Only meaningful for `provider`: false means a retry cannot help. */
+      retryable?: boolean;
+    };
 
 export interface StreamHandle {
   conversationId: string | null;

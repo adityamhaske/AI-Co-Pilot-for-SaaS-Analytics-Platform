@@ -21,6 +21,7 @@ from app.providers.base import (
     ToolSpec,
     Turn,
     TurnFinished,
+    is_retryable_provider_error,
 )
 
 logger = structlog.get_logger()
@@ -99,6 +100,7 @@ __all__ = [
     "Turn",
     "TurnFinished",
     "get_provider",
+    "is_retryable_provider_error",
     "pricing_for",
     "reset_provider_cache",
 ]

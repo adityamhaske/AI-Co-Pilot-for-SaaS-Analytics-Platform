@@ -222,3 +222,53 @@ def test_every_provider_is_priced(provider):
 def test_unknown_provider_falls_back_to_the_priciest_known_rate():
     """Under-metering spend is worse than over-metering it."""
     assert pricing_for("some-new-vendor") == (3.00, 15.00)
+
+
+# ---------------------------------------------------------------------------
+# Retryability
+#
+# The first live OpenAI call returned 429 insufficient_quota. The eval runner retried it
+# twice, because every provider error was treated as weather. An exhausted quota is not
+# weather — waiting changes nothing, and the retries only delayed the same failure.
+# ---------------------------------------------------------------------------
+
+
+class Status(Exception):
+    def __init__(self, message, status_code=None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+@pytest.mark.parametrize(
+    ("exc", "retryable"),
+    [
+        # The exact error the live OpenAI key produced.
+        (Status("Error code: 429 - {'code': 'insufficient_quota'}", 429), False),
+        (Status("You exceeded your current quota, please check your plan", 429), False),
+        (Status("Incorrect API key provided", 401), False),
+        (Status("model_not_found", 404), False),
+        (Status("gemini-2.5-pro is no longer available to new users", 404), False),
+        # Weather.
+        (Status("Rate limit reached, please slow down", 429), True),
+        (Status("Internal server error", 500), True),
+        (Status("Bad gateway", 502), True),
+        (Status("Request timed out", 408), True),
+        # No status at all — a dropped socket. Assumed transient on purpose.
+        (ConnectionResetError("Connection reset by peer"), True),
+        (Exception("something unlabelled went wrong"), True),
+        # A 4xx that is not one of the known-permanent shapes still is not retried.
+        (Status("Bad request: schema rejected", 400), False),
+    ],
+)
+def test_provider_errors_are_classified_by_whether_a_retry_could_help(exc, retryable):
+    from app.providers import is_retryable_provider_error
+
+    assert is_retryable_provider_error(exc) is retryable
+
+
+def test_permanent_markers_beat_a_retryable_status_code():
+    """429 alone says retry; 429 plus an exhausted quota does not."""
+    from app.providers import is_retryable_provider_error
+
+    assert is_retryable_provider_error(Status("insufficient_quota", 429)) is False
+    assert is_retryable_provider_error(Status("rate_limit_exceeded", 429)) is True

@@ -95,7 +95,11 @@ export function useChat({
               }));
               break;
             case "error":
-              patchLast((m) => ({ ...m, error: event.message }));
+              patchLast((m) => ({
+                ...m,
+                error: event.message,
+                errorKind: event.kind ?? "internal",
+              }));
               break;
             case "usage":
               break; // no UI surface yet

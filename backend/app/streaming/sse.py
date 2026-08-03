@@ -26,6 +26,7 @@ from app.providers import (
     Turn,
     TurnFinished,
     get_provider,
+    is_retryable_provider_error,
 )
 
 logger = structlog.get_logger()
@@ -102,7 +103,8 @@ async def stream_orchestrator(
                         "type": "error",
                         "kind": "timeout",
                         "message": (
-                            f"Stopped after {settings.agent_timeout_seconds:.0f} seconds. "
+                            f"Stopped after {settings.agent_timeout_seconds:.0f} "
+                            f"second{'' if settings.agent_timeout_seconds == 1 else 's'}. "
                             "The answer above may be incomplete."
                         ),
                     }
@@ -134,7 +136,9 @@ async def stream_orchestrator(
             except Exception as exc:
                 # CancelledError is a BaseException, so a client disconnect still
                 # propagates untouched rather than being relabelled a provider fault.
-                raise ProviderCallFailed(str(exc)) from exc
+                raise ProviderCallFailed(
+                    str(exc), retryable=is_retryable_provider_error(exc)
+                ) from exc
 
             if finished is None:
                 logger.warning("provider_finished_without_summary", step=step)
@@ -252,7 +256,8 @@ async def stream_orchestrator(
                     "type": "error",
                     "kind": "step_limit",
                     "message": (
-                        f"Stopped after {settings.max_agent_steps} tool-calling steps. "
+                        f"Stopped after {settings.max_agent_steps} tool-calling "
+                        f"step{'' if settings.max_agent_steps == 1 else 's'}. "
                         "Try asking a narrower question."
                     ),
                 }
@@ -276,7 +281,14 @@ async def stream_orchestrator(
             {
                 "type": "error",
                 "kind": "provider",
-                "message": "The model provider could not be reached. Please try again.",
+                # An exhausted quota and a dropped socket are both "the vendor said no",
+                # but only one of them is worth trying again.
+                "retryable": exc.retryable,
+                "message": (
+                    "The model provider could not be reached. Please try again."
+                    if exc.retryable
+                    else "The model provider rejected the request. Check the API key and its quota."
+                ),
             }
         )
     except Exception as exc:
