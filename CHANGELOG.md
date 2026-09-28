@@ -85,6 +85,13 @@ While the version is below 1.0.0 the API is not stable and minor versions may br
   in the body. Probes and load balancers act on the status code, so an instance that
   could not serve a single query stayed in rotation — the one thing readiness exists to
   prevent. It now returns `503`.
+- The API reference described the pre-0.1.0 API: a `query` request field where the
+  server takes `message`, so a client written from it got a `422`; SSE events the server
+  never sends; a 20-per-minute per-user limit that is 10 per minute per address; a
+  `Retry-After` header that is not sent; and tools and files that no longer exist.
+  Rewritten against the code and checked against a running server. The security
+  design's RBAC matrix named the removed `get_churn_rate`, and the architecture overview
+  now says plainly which parts of the original design it no longer describes.
 
 ### Planned
 - `/metrics` endpoint and OpenTelemetry traces

@@ -268,7 +268,7 @@ verified on every commit without a key. See [backend/evals/README.md](backend/ev
 |---|---|
 | [OVERHAUL_PLAN.md](OVERHAUL_PLAN.md) | Engineering review: what was broken, what a product would need |
 | [docs/architecture/metric-registry.md](docs/architecture/metric-registry.md) | The metric definition format, and why metrics are declared |
-| [docs/architecture/overview.md](docs/architecture/overview.md) | System design and request lifecycle |
+| [docs/architecture/overview.md](docs/architecture/overview.md) | The original v1 design and request lifecycle; its header lists what has since changed |
 | [docs/reference/api.md](docs/reference/api.md) | Endpoints, the SSE event contract, tool schemas |
 | [SECURITY.md](SECURITY.md) | Reporting a vulnerability, and known limitations |
 | [docs/security/design.md](docs/security/design.md) | Token design, RBAC matrix, injection defences and their limits |

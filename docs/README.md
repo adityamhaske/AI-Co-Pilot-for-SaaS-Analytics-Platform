@@ -7,7 +7,7 @@ matches why you are here.
 
 | Document | For |
 |---|---|
-| [architecture/overview.md](architecture/overview.md) | System design and the request lifecycle |
+| [architecture/overview.md](architecture/overview.md) | The original v1 design and request lifecycle; its header lists what has since changed |
 | [architecture/metric-registry.md](architecture/metric-registry.md) | **The core idea.** How metrics are declared rather than coded, and how to add one |
 
 ## Reference
