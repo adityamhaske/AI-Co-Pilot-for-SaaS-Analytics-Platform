@@ -135,7 +135,7 @@ what it would take to make this real.
 
 ## Getting started
 
-**Prerequisites:** Node.js 20+, Python 3.11+, and an API key for one provider.
+**Prerequisites:** Node.js 22.22+ or 24.15+, Python 3.11+, and an API key for one provider.
 
 ### Docker
 
@@ -194,7 +194,7 @@ python -c 'import secrets; print(secrets.token_urlsafe(48))'
 cd backend && ENVIRONMENT=test PYTHONPATH=. pytest
 ```
 
-312 backend tests plus 47 frontend tests, no API key needed. Metric arithmetic is
+325 backend tests plus 51 frontend tests, no API key needed. Metric arithmetic is
 deterministic and asserted to exact numbers; provider translation, tenant isolation,
 token revocation and the agent loop's bounds are all covered. The suite passes
 identically under all three `LLM_PROVIDER` values, so a local `.env` cannot change the

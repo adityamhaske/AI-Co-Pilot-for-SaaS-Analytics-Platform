@@ -8,6 +8,13 @@ While the version is below 1.0.0 the API is not stable and minor versions may br
 ## [Unreleased]
 
 ### Added
+- **Postgres row-level security** as a second tenant-isolation layer beneath the
+  application-side tenant filter, which stays the primary control. Off by default:
+  PostgreSQL exempts the table owner, so it only binds when the API connects as a
+  separate role — see [SECURITY.md](SECURITY.md). Seven tests try to defeat the policy;
+  they skip on SQLite, so CI runs them against Postgres and fails if they skip there.
+- **A frontend test suite** (Vitest, Testing Library, jsdom) covering stream parsing,
+  formatting and components. The frontend previously had no tests at all.
 - First live provider run. The eval suite had never been executed against a real API;
   running it surfaced four adapter bugs that no unit test could have caught, all fixed
   below. Result: 26/26 on 26 golden questions with `gemini-flash-latest`.
@@ -24,23 +31,13 @@ While the version is below 1.0.0 the API is not stable and minor versions may br
   Gemini rejects a replayed function call whose `thought_signature` is missing.
 - `AliasChoices` on the API-key and secret settings, so `GOOGLE_API_KEY` and
   `JWT_SECRET_KEY` are accepted alongside the documented names.
-
-### Changed
-- Gemini's default model is now `gemini-flash-latest`. `gemini-2.5-pro` is rejected for
-  new API keys ("no longer available to new users") while still appearing in
-  `models.list()` — listing is not proof of access.
-- The two prompt-injection eval cases assert on disclosure rather than on a substring.
-  Both previously failed a *correct* refusal for quoting the forbidden term back
-  ("I cannot present estimated figures as real data" tripped a ban on "estimated").
-- Budget tests price against an explicit provider instead of the ambient
-  `LLM_PROVIDER`. They hardcoded Anthropic's rates and so failed, correctly priced, for
-  anyone whose `.env` selected another provider.
-
-### Fixed
-- Gemini reported `stop_reason=other` on every normal completion. The SDK returns an
-  enum, so `str()` yields `FinishReason.STOP` rather than `STOP`; `_stop_reason` now
-  reads `.name` first.
-- The eval runner checked for `ANTHROPIC_API_KEY` regardless of the selected provider.
+- SSE `error` events carry a `kind` — `provider`, `internal`, `step_limit` or
+  `timeout` — and still never the exception text. A step limit or timeout leaves a real,
+  partial answer on screen, so the UI now renders it as a warning (`role=status`) rather
+  than as the failure (`role=alert`) that a vendor outage is.
+- Inbound provider tests, feeding SDK-shaped responses through each adapter's
+  `stream_turn`. Every bug the first live run found was on the response side, which
+  nothing tested; the request side was well covered and correct.
 
 ### Changed
 - **Replaced `python-jose` with `PyJWT`.** python-jose is effectively unmaintained, and
@@ -53,10 +50,39 @@ While the version is below 1.0.0 the API is not stable and minor versions may br
   separate: `max_agent_steps` for a model that keeps calling tools,
   `agent_timeout_seconds` checked between steps, and `provider_timeout_seconds` handed to
   each SDK to bound a hung HTTP call.
+- Gemini's default model is now `gemini-flash-latest`. `gemini-2.5-pro` is rejected for
+  new API keys ("no longer available to new users") while still appearing in
+  `models.list()` — listing is not proof of access.
+- The two prompt-injection eval cases assert on disclosure rather than on a substring.
+  Both previously failed a *correct* refusal for quoting the forbidden term back
+  ("I cannot present estimated figures as real data" tripped a ban on "estimated").
+- Budget tests price against an explicit provider instead of the ambient
+  `LLM_PROVIDER`. They hardcoded Anthropic's rates and so failed, correctly priced, for
+  anyone whose `.env` selected another provider.
+- The eval runner retries a transient vendor failure (rate limit, 5xx, dropped
+  connection) twice with backoff, and prints how many cases needed it. A settled one —
+  exhausted quota, bad key, missing model — is not retried: waiting does not refill a
+  quota, and a genuine failure must not be retried into a pass.
+
+### Fixed
+- Gemini reported `stop_reason=other` on every normal completion. The SDK returns an
+  enum, so `str()` yields `FinishReason.STOP` rather than `STOP`; `_stop_reason` now
+  reads `.name` first.
+- The eval runner checked for `ANTHROPIC_API_KEY` regardless of the selected provider.
+- **Docker images shipped only the Anthropic SDK**, so an image run with
+  `LLM_PROVIDER=gemini` or `openai` started cleanly and failed on the first question.
+  `LLM_PROVIDER` is now a build argument, threaded through Compose.
+- The CI "Postgres" job was testing SQLite: `conftest.py` ignored `DATABASE_URL`.
+  Honouring it surfaced inserts ordered child-before-parent, which SQLite accepted only
+  because it ships with foreign keys off. SQLite connections now enforce them.
+- `RoleChecker` path matching is exact-or-nested. `startswith` alone let
+  `/api/copilot/queryX` satisfy a grant of `/api/copilot/query`.
+- The weekly secret scan failed on every run, on a documentation example in
+  `OVERHAUL_PLAN.md`: the standard HS256 JWT header, truncated, with no key. It is
+  suppressed by fingerprint in `.gitleaksignore`, so a new finding in the same file still
+  fails.
 
 ### Planned
-- Postgres row-level security as a second tenant-isolation layer
-- First accuracy figure from a live eval run
 - `/metrics` endpoint and OpenTelemetry traces
 
 ## [0.3.0] — 2026-07-29

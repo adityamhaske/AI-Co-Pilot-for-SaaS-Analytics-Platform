@@ -1,0 +1,15 @@
+# Findings gitleaks reports that have been checked and are not secrets. Each entry is a
+# fingerprint (commit:file:rule:line) from `gitleaks detect`, so it silences that one
+# historical finding and nothing else — a new leak in the same file still fails the scan.
+#
+# The pull_request and push scans only look at new commits, so a historical false positive
+# like this one only ever fails the weekly scheduled run, which scans the full history.
+
+# OVERHAUL_PLAN.md, "Empty JWT_SECRET silently produces forgeable tokens": the flagged
+# string is `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`, which is base64 for
+# {"alg":"HS256","typ":"JWT"} — the header every HS256 JWT starts with, truncated before
+# any claims or signature. It illustrates the vulnerability the plan fixed; no key exists.
+# The first entry is the commit that added it (what CI's history scan reports); the second
+# is where it sits in the working tree now, for a local `gitleaks dir` or `--no-git` scan.
+b2f1a3c56632bbbbfffa1c8147a1013a0e96732a:OVERHAUL_PLAN.md:generic-api-key:74
+OVERHAUL_PLAN.md:generic-api-key:89
