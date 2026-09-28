@@ -81,6 +81,10 @@ While the version is below 1.0.0 the API is not stable and minor versions may br
   `OVERHAUL_PLAN.md`: the standard HS256 JWT header, truncated, with no key. It is
   suppressed by fingerprint in `.gitleaksignore`, so a new finding in the same file still
   fails.
+- **`/ready` returned `200` when the database was unreachable**, with `"degraded"` only
+  in the body. Probes and load balancers act on the status code, so an instance that
+  could not serve a single query stayed in rotation — the one thing readiness exists to
+  prevent. It now returns `503`.
 
 ### Planned
 - `/metrics` endpoint and OpenTelemetry traces

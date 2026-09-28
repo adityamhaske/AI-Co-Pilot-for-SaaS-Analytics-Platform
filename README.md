@@ -194,7 +194,7 @@ python -c 'import secrets; print(secrets.token_urlsafe(48))'
 cd backend && ENVIRONMENT=test PYTHONPATH=. pytest
 ```
 
-325 backend tests plus 51 frontend tests, no API key needed. Metric arithmetic is
+329 backend tests plus 51 frontend tests, no API key needed. Metric arithmetic is
 deterministic and asserted to exact numbers; provider translation, tenant isolation,
 token revocation and the agent loop's bounds are all covered. The suite passes
 identically under all three `LLM_PROVIDER` values, so a local `.env` cannot change the
