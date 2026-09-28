@@ -8,6 +8,10 @@ on:
   schedule:
     # A dependency that was clean at merge time may not be next week.
     - cron: '0 7 * * 1'
+  # On a push or pull request gitleaks scans only the new commits; the full history is
+  # scanned only on schedule or on demand. Without this trigger, a change to
+  # .gitleaksignore could not be confirmed until the following Monday.
+  workflow_dispatch:
 
 permissions:
   contents: read
