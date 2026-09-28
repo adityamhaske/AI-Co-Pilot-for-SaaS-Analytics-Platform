@@ -1,5 +1,30 @@
 # Architecture — AI Co-Pilot for SaaS Analytics Platform
 
+> **ORIGINAL DESIGN, PARTLY SUPERSEDED.** This is the v1 design the project was built
+> from, kept for its reasoning — typed tools instead of text-to-SQL, tenant scope taken
+> only from the verified token, authorisation checked twice — all of which still holds.
+> It has not kept pace with the code, and these specifics have changed:
+>
+> - **Three model providers**, not one: Anthropic, OpenAI or Gemini, selected by
+>   `LLM_PROVIDER` behind a provider-neutral loop in `backend/app/providers/`.
+> - **Multi-turn and multi-step.** Conversations persist, follow-ups resolve against
+>   earlier turns, and one question may take up to `MAX_AGENT_STEPS` (default 6)
+>   tool-calling steps. §1 lists multi-step tool use as a non-goal.
+> - **Tools are generated from the metric registry** in
+>   `backend/app/metrics/definitions/`. `get_churn_rate` became `get_metric_value`.
+>   `orchestrator.py` and `validator/query_validator.py` no longer exist: the agent loop
+>   is `backend/app/streaming/sse.py`, and every metric query is compiled by
+>   `backend/app/metrics/compiler.py`.
+> - **The prompt-injection guard is five regexes**, logged as telemetry. There is no
+>   model-side classification call.
+> - **SSE is a plain `StreamingResponse`**; `sse-starlette` is not used.
+>
+> The folder tree in §8, and the root-level files it names, describe the plan rather than
+> the repository. For the current system read the [README](../../README.md),
+> [metric-registry.md](metric-registry.md), the [API reference](../reference/api.md),
+> the [security design](../security/design.md) and [SECURITY.md](../../SECURITY.md).
+> Where they disagree with this document, they are right.
+
 This document is the single source of truth for system design. Code should match this document; if an implementation detail changes during the build, update this file in the same PR.
 
 ## 1. Goals and non-goals

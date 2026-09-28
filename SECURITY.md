@@ -57,6 +57,13 @@ itself a hazard:
     that does **not** own the tables. Migrate and seed as the owner; run the API as a
     separate role. Running the API as the owner leaves the layer inert.
   - SQLite has no RLS at all, so local development and the fast test path never have it.
+- **Rate limits are per process and per connecting address.** slowapi counts in each
+  process's memory, and the production image runs four gunicorn workers, so a client can
+  make up to four times the configured limits — up to 20 login attempts a minute rather
+  than 5. They are keyed by the connecting address, so behind a reverse proxy every client
+  shares the proxy's single limit unless forwarded headers are trusted (gunicorn's
+  `--forwarded-allow-ips`). A shared store — slowapi's `storage_uri`, e.g. Redis — closes
+  the first gap.
 - **No signup, so no account-recovery or email-verification surface** exists to attack.
 - **Not audited.** No penetration test or third-party review has been performed.
 

@@ -194,7 +194,7 @@ python -c 'import secrets; print(secrets.token_urlsafe(48))'
 cd backend && ENVIRONMENT=test PYTHONPATH=. pytest
 ```
 
-325 backend tests plus 51 frontend tests, no API key needed. Metric arithmetic is
+329 backend tests plus 51 frontend tests, no API key needed. Metric arithmetic is
 deterministic and asserted to exact numbers; provider translation, tenant isolation,
 token revocation and the agent loop's bounds are all covered. The suite passes
 identically under all three `LLM_PROVIDER` values, so a local `.env` cannot change the
@@ -268,7 +268,7 @@ verified on every commit without a key. See [backend/evals/README.md](backend/ev
 |---|---|
 | [OVERHAUL_PLAN.md](OVERHAUL_PLAN.md) | Engineering review: what was broken, what a product would need |
 | [docs/architecture/metric-registry.md](docs/architecture/metric-registry.md) | The metric definition format, and why metrics are declared |
-| [docs/architecture/overview.md](docs/architecture/overview.md) | System design and request lifecycle |
+| [docs/architecture/overview.md](docs/architecture/overview.md) | The original v1 design and request lifecycle; its header lists what has since changed |
 | [docs/reference/api.md](docs/reference/api.md) | Endpoints, the SSE event contract, tool schemas |
 | [SECURITY.md](SECURITY.md) | Reporting a vulnerability, and known limitations |
 | [docs/security/design.md](docs/security/design.md) | Token design, RBAC matrix, injection defences and their limits |

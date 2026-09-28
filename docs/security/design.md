@@ -26,14 +26,16 @@ This document specifies the security controls that back the resume claims "JWT-a
 | Tool / endpoint | viewer | analyst | admin |
 |---|---|---|---|
 | `get_metric_trend` | ✅ | ✅ | ✅ |
-| `get_churn_rate` | ✅ | ✅ | ✅ |
+| `get_metric_value` | ✅ | ✅ | ✅ |
 | `compare_segments` | ❌ | ✅ | ✅ |
 | `get_top_customers` | ❌ | ✅ | ✅ |
 | `list_active_alerts` | ❌ | ❌ | ✅ |
 | `/api/copilot/query` | ✅ | ✅ | ✅ |
 | `/api/admin/users` | ❌ | ❌ | ✅ |
 
-Implementation rule: the RBAC check happens **before** the request reaches the orchestrator, and a second check happens **again** inside the query validator right before execution. Checking twice (defense in depth) means a bug in one layer doesn't silently become a privilege escalation.
+The matrix is `ROLE_PERMISSIONS` in `backend/app/core/rbac.py`, and gates the *tool*. Which *metrics* a role may read through those tools is a second, independent gate: `minimum_role` on each definition in `backend/app/metrics/definitions/`. A role has to pass both, so widening one never silently widens the other.
+
+Implementation rule: the RBAC check happens **before** the request reaches the orchestrator — on the route, and in the tool schemas the model is shown — and a second check happens **again** right before execution: `check_tool_access` on every tool call in `backend/app/streaming/sse.py`, then the metric's `minimum_role` in `backend/app/metrics/queries.py`. Checking twice (defense in depth) means a bug in one layer doesn't silently become a privilege escalation.
 
 ## 3. Prompt-injection detection
 

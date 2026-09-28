@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -78,7 +79,13 @@ def readiness_check():
             connection.execute(text("SELECT 1"))
     except Exception as exc:
         logger.error("readiness_failed", error=str(exc))
-        return {"status": "degraded", "database": "unreachable"}
+        # 503, not 200 with a "degraded" body: probes and load balancers read the status
+        # code, so a 200 here kept an instance that could not reach its database in
+        # rotation — the opposite of what this endpoint is for.
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "degraded", "database": "unreachable"},
+        )
     return {"status": "ready", "database": "ok"}
 
 
