@@ -108,7 +108,7 @@ sequenceDiagram
 
 | Component | Responsibility | Key tech |
 |---|---|---|
-| React SPA | Chat interface, chart rendering, auth state, SSE consumption | React + Vite, TypeScript, Tailwind CSS, shadcn/ui, Recharts, TanStack Query |
+| React SPA | Chat interface, chart rendering, auth state, SSE consumption | React + Vite, TypeScript, Tailwind CSS v4, shadcn/ui, Recharts |
 | Auth middleware | Verify JWT signature/expiry, attach `user_id`, `role`, `tenant_id` to request state | `PyJWT`, FastAPI `Depends` |
 | RBAC guard | Map role → allowed tool functions and endpoints; reject before any LLM call | Custom FastAPI dependency, declarative permission table |
 | Prompt-injection guard | Screen incoming text for instruction-override patterns before it reaches the model | Heuristic rule set + optional cheap Claude Haiku classification call |

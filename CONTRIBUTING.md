@@ -98,7 +98,7 @@ Model behaviour is measured separately from the deterministic tests:
 cd backend && ANTHROPIC_API_KEY=sk-... PYTHONPATH=. python -m evals.runner
 ```
 
-This costs real money, so it runs nightly rather than per commit. If you change a tool
+This costs real money, so it runs on demand rather than per commit. If you change a tool
 description, run at least `--category direct` — the description is the only thing the
 model has to distinguish `mrr` from `arr`.
 

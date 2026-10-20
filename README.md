@@ -244,7 +244,7 @@ which the tool grader counted as a pass. Every case is now graded for completion
 cause was that the model had no idea what today's date was and was guessing years; see
 [`orchestrator/prompts.py`](backend/app/orchestrator/prompts.py).
 
-This calls a real API and costs money, so it runs nightly rather than per commit. The
+This calls a real API and costs money, so it runs on demand rather than per commit. The
 harness itself — dataset integrity and the fixture's hand-computed expected values — is
 verified on every commit without a key. See [backend/evals/README.md](backend/evals/README.md).
 
@@ -252,7 +252,7 @@ verified on every commit without a key. See [backend/evals/README.md](backend/ev
 
 | Layer | Choice |
 |---|---|
-| Frontend | React 19 + Vite + TypeScript, Tailwind with semantic tokens, Recharts |
+| Frontend | React 19 + Vite + TypeScript, Tailwind v4 with semantic tokens, Recharts |
 | Backend | FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic |
 | LLM | Anthropic, OpenAI or Gemini — selected by config |
 | Streaming | Server-Sent Events over `StreamingResponse` |
@@ -260,7 +260,7 @@ verified on every commit without a key. See [backend/evals/README.md](backend/ev
 | Database | SQLite locally, PostgreSQL for deployment |
 | Limits | slowapi, plus a per-user daily cost ceiling metered from token usage |
 | Serving | gunicorn + uvicorn workers; nginx for the static bundle |
-| CI | GitHub Actions — lint, typecheck, tests, dependency and secret scanning, nightly evals |
+| CI | GitHub Actions — lint, typecheck, tests, dependency and secret scanning, on-demand evals |
 
 ## Documentation
 
