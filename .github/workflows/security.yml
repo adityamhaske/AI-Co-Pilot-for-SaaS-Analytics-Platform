@@ -5,12 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  schedule:
-    # A dependency that was clean at merge time may not be next week.
-    - cron: '0 7 * * 1'
-  # On a push or pull request gitleaks scans only the new commits; the full history is
-  # scanned only on schedule or on demand. Without this trigger, a change to
-  # .gitleaksignore could not be confirmed until the following Monday.
+  # The project is finished, so there is no weekly run: an advisory published after the
+  # last commit would only turn a frozen repo red. Run it from the Actions tab to audit
+  # the current state. On a push or pull request gitleaks scans only the new commits; a
+  # manual run scans the full history.
   workflow_dispatch:
 
 permissions:

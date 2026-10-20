@@ -5,12 +5,12 @@ name: Evals
 # without any key by the normal test job.
 #
 # Which provider runs is `vars.LLM_PROVIDER` (a repository variable), overridable per run
-# from the Actions tab. It used to be hardcoded to Anthropic, which meant a repo
-# configured for Gemini had a nightly job that could only ever fail.
+# from the Actions tab.
+#
+# Manual only. The nightly schedule was removed when the project was finished: with no
+# provider key configured it failed every night, and with one it would spend money
+# measuring a codebase that no longer changes.
 on:
-  schedule:
-    # 06:00 UTC daily. Model behaviour drifts; a nightly number catches it.
-    - cron: '0 6 * * *'
   workflow_dispatch:
     inputs:
       provider:
@@ -38,7 +38,7 @@ jobs:
       # Fail here, with the name of the missing secret, rather than 30 seconds later
       # inside the runner with an auth error. The previous `if:` guard on this job was
       # `github.repository_owner != ''`, which is always true and checked nothing — so a
-      # repo with no secrets set failed nightly with a message about the wrong thing.
+      # repo with no secrets set failed with a message about the wrong thing.
       #
       # This fails rather than skips deliberately: a green check for a suite that never
       # ran is the failure mode these evals exist to prevent.
@@ -102,7 +102,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          # Named per provider so a manual Gemini run does not overwrite the nightly one.
+          # Named per provider so a Gemini run does not overwrite an Anthropic one.
           name: eval-results-${{ env.LLM_PROVIDER }}
           path: backend/eval-results.json
           retention-days: 30

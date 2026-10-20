@@ -3,7 +3,7 @@
 # historical finding and nothing else — a new leak in the same file still fails the scan.
 #
 # The pull_request and push scans only look at new commits, so a historical false positive
-# like this one only ever fails the weekly scheduled run, which scans the full history.
+# like this one only ever fails a manual run, which scans the full history.
 
 # OVERHAUL_PLAN.md, "Empty JWT_SECRET silently produces forgeable tokens": the flagged
 # string is `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`, which is base64 for

@@ -40,6 +40,16 @@ While the version is below 1.0.0 the API is not stable and minor versions may br
   nothing tested; the request side was well covered and correct.
 
 ### Changed
+- **Tailwind CSS 3 → 4.** The theme moved from `tailwind.config.js` into `@theme` blocks
+  in `src/index.css`, and the build uses `@tailwindcss/vite` in place of PostCSS and
+  Autoprefixer. Tailwind 3 depends on `chokidar`, `fast-glob` and `micromatch`, which pull
+  in a `braces` with a high-severity advisory and no patched release, so `npm audit` could
+  not pass while it stayed. Before/after screenshots of every view, in both themes and on
+  a phone viewport, match pixel for pixel except four anti-aliased corner pixels on the
+  logo. The unused `tailwindcss-animate` plugin is removed.
+- **No scheduled jobs and no Dependabot.** The project is finished: `.github/dependabot.yml`
+  is removed, and the Security and Evals workflows no longer run on a timer. Both still
+  run from the Actions tab, and Security still runs on every push and pull request.
 - **Replaced `python-jose` with `PyJWT`.** python-jose is effectively unmaintained, and
   its willingness to sign and verify with an empty HMAC key was the mechanism behind the
   0.1.0 token-forgery hole. PyJWT raises `InvalidKeyError` instead. The fail-fast config
@@ -92,6 +102,12 @@ While the version is below 1.0.0 the API is not stable and minor versions may br
   Rewritten against the code and checked against a running server. The security
   design's RBAC matrix named the removed `get_churn_rate`, and the architecture overview
   now says plainly which parts of the original design it no longer describes.
+- The Security workflow failed on every run from early October: high-severity advisories
+  in `brace-expansion` and `source-map-js` (patched releases, now in the lockfile) and in
+  `braces` through Tailwind 3 (see Changed). `npm audit` reports no vulnerabilities.
+- The Evals workflow failed every night because no provider key is configured. It is now
+  manual-only rather than a nightly job that could not pass.
+- The architecture overview listed TanStack Query, which the frontend does not use.
 
 ### Planned
 - `/metrics` endpoint and OpenTelemetry traces

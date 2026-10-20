@@ -81,11 +81,11 @@ with a wrong answer.
 - **Every commit** — the harness runs without an API key: dataset integrity (every case
   names a real tool, role and metric, and asserts *something*), the fixture's expected
   values, and the graders.
-- **Nightly and on demand** — `.github/workflows/evals.yml` runs the full set against
-  the live API and fails below `--threshold` (default 85%).
+- **On demand** — `.github/workflows/evals.yml` runs the full set against the live API
+  from the Actions tab and fails below `--threshold` (default 85%).
 
-Nightly matters because model behaviour drifts. A number measured once at launch tells
-you nothing three months later.
+Re-run it before trusting an old number: model behaviour drifts, and a score measured
+once at launch tells you nothing three months later.
 
 ## Adding a case
 
