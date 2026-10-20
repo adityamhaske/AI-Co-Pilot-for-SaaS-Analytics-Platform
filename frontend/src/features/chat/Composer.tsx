@@ -94,7 +94,7 @@ export function Composer({
             }
           }}
           style={{ maxHeight: MAX_HEIGHT }}
-          className="flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-base text-ink outline-none placeholder:text-ink-muted"
+          className="flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-base text-ink outline-hidden placeholder:text-ink-muted"
         />
 
         {busy ? (

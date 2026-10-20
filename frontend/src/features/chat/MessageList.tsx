@@ -75,7 +75,7 @@ function MessageRow({
         ) : (
           <div
             className={cn(
-              "whitespace-pre-wrap break-words text-md text-ink",
+              "whitespace-pre-wrap wrap-break-word text-md text-ink",
               message.streaming && message.content && "streaming-caret"
             )}
           >

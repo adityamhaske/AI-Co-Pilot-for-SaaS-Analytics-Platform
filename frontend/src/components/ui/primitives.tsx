@@ -104,7 +104,7 @@ export const Input = React.forwardRef<
       "placeholder:text-ink-muted",
       "transition-colors duration-150",
       "hover:border-line-strong",
-      "focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent",
+      "focus:border-accent focus:outline-hidden focus:ring-1 focus:ring-accent",
       "disabled:cursor-not-allowed disabled:bg-surface-hover disabled:text-ink-muted",
       className
     )}

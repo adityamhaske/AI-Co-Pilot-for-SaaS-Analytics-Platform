@@ -1,6 +1,7 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* `dark:` follows the theme the app sets on <html>, not only the OS preference. */
+@custom-variant dark (&:is([data-theme="dark"] *));
 
 /*
  * Design tokens.
@@ -127,8 +128,19 @@
     }
   }
 
-  * {
+  *,
+  ::before,
+  ::after,
+  ::backdrop,
+  ::file-selector-button {
     border-color: rgb(var(--line));
+  }
+
+  /* Tailwind v4's preflight gives buttons the default cursor; every button here is a
+     control the reader should see is clickable. */
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
   }
 
   html {
@@ -157,29 +169,112 @@
   }
 }
 
-@layer components {
-  /* Scrollbars that recede until the region is hovered. */
-  .scroll-region {
-    scrollbar-width: thin;
-    scrollbar-color: transparent transparent;
+/*
+ * Tailwind's theme, mapped onto the tokens above. Components write `bg-surface` and
+ * `text-ink`, never `bg-slate-900` — so retheming touches one file and dark mode is not
+ * a per-component concern.
+ *
+ * `inline` because the values are themselves variables: utilities resolve them where
+ * they are used, so a theme switch on any ancestor reaches them.
+ */
+@theme inline {
+  --color-surface: rgb(var(--surface));
+  --color-surface-sunken: rgb(var(--surface-sunken));
+  --color-surface-raised: rgb(var(--surface-raised));
+  --color-surface-hover: rgb(var(--surface-hover));
+  --color-surface-active: rgb(var(--surface-active));
+
+  --color-ink: rgb(var(--ink));
+  --color-ink-secondary: rgb(var(--ink-secondary));
+  --color-ink-muted: rgb(var(--ink-muted));
+  --color-ink-inverse: rgb(var(--ink-inverse));
+
+  --color-line: rgb(var(--line));
+  --color-line-strong: rgb(var(--line-strong));
+
+  --color-accent: rgb(var(--accent));
+  --color-accent-hover: rgb(var(--accent-hover));
+  --color-accent-subtle: rgb(var(--accent-subtle));
+  --color-accent-ink: rgb(var(--accent-ink));
+
+  --color-danger: rgb(var(--danger));
+  --color-danger-subtle: rgb(var(--danger-subtle));
+  --color-success: rgb(var(--success));
+  --color-warning: rgb(var(--warning));
+  --color-warning-subtle: rgb(var(--warning-subtle));
+
+  --color-series-1: rgb(var(--series-1));
+  --color-series-2: rgb(var(--series-2));
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-sm: calc(var(--radius) - 6px);
+}
+
+@theme {
+  /* A restrained scale. A size outside it signals the hierarchy is wrong. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-2xs--letter-spacing: 0.02em;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.5rem;
+  --text-md: 0.9375rem;
+  --text-md--line-height: 1.625rem;
+  --text-lg: 1.0625rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.375rem;
+  --text-xl--line-height: 1.875rem;
+  --text-xl--letter-spacing: -0.01em;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.25rem;
+  --text-2xl--letter-spacing: -0.02em;
+
+  /* Depth comes from surface steps; shadows stay subtle. */
+  --shadow-raised: 0 1px 2px 0 rgb(0 0 0 / 0.06), 0 1px 3px 1px rgb(0 0 0 / 0.04);
+  --shadow-overlay: 0 4px 8px 3px rgb(0 0 0 / 0.08), 0 1px 3px rgb(0 0 0 / 0.1);
+
+  --animate-fade-in-up: fade-in-up 180ms ease-out;
+
+  @keyframes fade-in-up {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
-  .scroll-region:hover {
+}
+
+/* Scrollbars that recede until the region is hovered. */
+@utility scroll-region {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+
+  &:hover {
     scrollbar-color: rgb(var(--line-strong)) transparent;
   }
-  .scroll-region::-webkit-scrollbar {
+  &::-webkit-scrollbar {
     width: 8px;
     height: 8px;
   }
-  .scroll-region::-webkit-scrollbar-thumb {
+  &::-webkit-scrollbar-thumb {
     background-color: transparent;
     border-radius: 4px;
   }
-  .scroll-region:hover::-webkit-scrollbar-thumb {
+  &:hover::-webkit-scrollbar-thumb {
     background-color: rgb(var(--line-strong));
   }
+}
 
-  /* Caret on the in-flight assistant message. */
-  .streaming-caret::after {
+/* Caret on the in-flight assistant message. */
+@utility streaming-caret {
+  &::after {
     content: "";
     display: inline-block;
     width: 2px;
@@ -189,15 +284,15 @@
     background-color: rgb(var(--accent));
     animation: caret-blink 1s step-end infinite;
   }
+}
 
-  @keyframes caret-blink {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0;
-    }
+@keyframes caret-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
   }
 }
 
